@@ -1,0 +1,87 @@
+
+# ==========================================
+# CMake build directories
+# ==========================================
+/build/
+/build-*/
+/cmake-build-*/
+/out/
+/install/
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+compile_commands.json
+CTestTestfile.cmake
+Testing/
+
+# ==========================================
+# Compiled C/C++ files
+# ==========================================
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dll
+*.dylib
+*.exe
+*.out
+*.pdb
+*.ilk
+*.exp
+
+# ==========================================
+# Qt generated files
+# ==========================================
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
+*.qmlc
+*.jsc
+.qmake.stash
+
+# ==========================================
+# VS Code
+# ==========================================
+.vscode/*
+!.vscode/extensions.json
+
+# ==========================================
+# Visual Studio / MSVC
+# ==========================================
+.vs/
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+
+# ==========================================
+# IDE / Editor temporary files
+# ==========================================
+.idea/
+*.swp
+*.swo
+*~
+*.tmp
+*.bak
+
+# ==========================================
+# Runtime output
+# ==========================================
+/output/
+/results/
+/logs/
+
+# ==========================================
+# OS generated files
+# ==========================================
+.DS_Store
+Thumbs.db
+desktop.ini
