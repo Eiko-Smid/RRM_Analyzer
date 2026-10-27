@@ -49,4 +49,4 @@ namespace rrm
         std::optional<LogData> log_data_;
 
     };
-}
+} // namespace rrm

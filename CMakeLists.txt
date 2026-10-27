@@ -13,6 +13,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # --------------------------------------------------
 add_library(rrm_core
     src/rrm_log_parser.cpp
+    src/string_helpers.cpp
 )
 
 target_include_directories(rrm_core
