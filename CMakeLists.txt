@@ -33,10 +33,20 @@ endif()
 # --------------------------------------------------
 # Executable
 # --------------------------------------------------
+# Add main exe
 add_executable(rrm_analyzer
     src/main.cpp
 )
 
 target_link_libraries(rrm_analyzer
+    PRIVATE rrm_core
+)
+
+# Add test exe for testing code
+add_executable(test_log_parser
+    tests/test_log_parser.cpp
+)
+
+target_link_libraries(test_log_parser
     PRIVATE rrm_core
 )

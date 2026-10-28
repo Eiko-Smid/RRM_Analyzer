@@ -3,9 +3,10 @@
 #include "rrm/log_data.hpp"
 
 #include <cstddef>
+#include <iosfwd>
 #include <optional>
 #include <string>
-#include <iosfwd>
+#include <vector>
 
 namespace rrm
 {
@@ -19,11 +20,12 @@ namespace rrm
              * Selects only the rows that match current step value. 
              * @param file_path Path to the logfile to load.
              * @param step The step value to filter the rows. Default is 5.
+             *             std::nullopt loads all steps.
              * @param delimiter The delimiter to split the logfile lines into chunks.
             */
             void load(
                 const std::string& file_path,
-                int step = 5,
+                std::optional<int> step = 5,
                 const std::string& delimiter = ";"
             );
 
@@ -74,18 +76,23 @@ namespace rrm
             };
 
             // Define transitions
-            ParseState state;
+            ParseState state{ParseState::IDLE};
             FileState file_state;
             ColInfo col_info;
 
             // Indicates if measurement table has been found in log file
-            bool found_table;
+            bool found_table{false};
 
             // Stores data while parsing the log file
             LogData result;
 
             bool parsing_error{false};
             std::string error_message;
+
+            // Flags set only by state processing; transitions only inspect them.
+            bool meas_separator_found{false};
+            bool log_stopped_found{false};
+            bool selected_step_seen{false};
 
             // Define transitions
             void transIdleToReadMeta(bool f_opened);
@@ -96,30 +103,16 @@ namespace rrm
 
             void transReadMetaToErr();
 
-            void transReadMeasToReadSum(const std::vector<std::string> fields);
+            void transReadMeasToReadSum();
 
-            void transReadMeasToErr(const std::vector<std::string> fields);
+            void transReadMeasToErr();
 
-            void transReadSummaryCompleted(const std::vector<std::string>& fields);
+            void transReadSummaryCompleted();
 
             void transReadSummaryToErr();
-            
-            void processStateIdle();
 
-            void processStateReadMeta(const std::vector<std::string> fields);
-            
-            void processStateReadMeas(
-                const std::vector<std::string> fields,
-                std::size_t line_number,
-                int step
-            );
-            
-            void processStateReadSummary(const std::vector<std::string> fields);
-
-            void processStateCompleted();
-
-            void processStateErr();
-            
+            // Reads one line, updates file-state flags and splits it into fields.
+            // Called only from reading-state processing methods.
             bool readNextLine(
                 std::istream& input,
                 std::size_t& line_number,
@@ -127,9 +120,40 @@ namespace rrm
                 std::vector<std::string>& fields
             );
 
+            void processStateIdle(
+                const std::string& file_path,
+                std::optional<int> step,
+                const std::string& delimiter,
+                bool f_opened
+            );
+
+            void processStateReadMeta(
+                std::istream& input,
+                std::size_t& line_number,
+                const std::string& delimiter
+            );
+            
+            void processStateReadMeas(
+                std::istream& input,
+                std::size_t& line_number,
+                const std::string& delimiter,
+                std::optional<int> step
+            );
+            
+            void processStateReadSummary(
+                std::istream& input,
+                std::size_t& line_number,
+                const std::string& delimiter
+            );
+
+            void processStateCompleted(bool& finished);
+
+            void processStateErr(bool& finished);
+            
+
             [[nodiscard]] LogData parsFile(
                 const std::string& file_path,
-                int step,
+                std::optional<int> step,
                 const std::string& delimiter
             );
 

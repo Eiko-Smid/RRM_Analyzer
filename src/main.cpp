@@ -2,6 +2,7 @@
 
 #include <exception>
 #include <iostream>
+#include <optional>
 #include <string>
 
 
@@ -18,11 +19,21 @@ int main(int argc, char* argv[])
 
     try
     {
-        const int step = (argc > 2) ? std::stoi(argv[2]) : 5;
+        // A step number filters measurements; "all" selects every step.
+        std::optional<int> step = 5;
+        if (argc > 2)
+        {
+            const std::string step_arg = argv[2];
+            step = step_arg == "all" ? std::nullopt
+                                     : std::optional<int>(std::stoi(step_arg));
+        }
+
+        // Optional third argument selects a nondefault delimiter.
+        const std::string delimiter = argc > 3 ? argv[3] : ";";
 
         // Create parser and load selected log file
         rrm::RrmLogParser parser;
-        parser.load(file_path, step);
+        parser.load(file_path, step, delimiter);
 
         // Verify that data has been loaded
         if (!parser.hasLoaded())
@@ -41,10 +52,11 @@ int main(int argc, char* argv[])
         {
             std::cerr
                 << "Warning: No samples found for step "
-                << step << '\n';
+                << (step ? std::to_string(*step) : "all") << '\n';
         }
 
-        return 0;
+        // A partial result stays available even when the file is incomplete.
+        return data.parse_status == rrm::ParseStatus::Complete ? 0 : 2;
     }
     catch (const std::exception& error)
     {
