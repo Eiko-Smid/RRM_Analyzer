@@ -84,10 +84,11 @@ namespace rrm
 
     void RrmLogParser::load(
         const std::string& file_path,
-        int step
+        int step,
+        const std::string& delimiter
     )
     {
-        log_data_ = parsFile(file_path, step);
+        log_data_ = parsFile(file_path, step, delimiter);
     }
 
 
@@ -98,7 +99,7 @@ namespace rrm
         std::cout
         << "File: " << data.file_path
         << "\nSelected step: " << data.sel_step
-        << "\nTotal measurement rows: " << data.n_meas_table
+        << "\nTotal measurement rows: " << data.n_meas_rows
         << "\nSelected samples: " << data.meas_samples.size()
         << '\n';
 
@@ -166,203 +167,354 @@ namespace rrm
         log_data_.reset();
     }
 
+
+
     // ------------------------------------------------------------
     // Implement Private methods
     // ------------------------------------------------------------
-    
-    LogData RrmLogParser::parsFile(
-        const std::string& file_path,
-        int step
+
+    void RrmLogParser::transIdleToReadMeta(bool f_opened)
+    {
+        if (f_opened)
+        {
+            state = ParseState::READ_METADATA;
+        }
+    }
+
+    void RrmLogParser::transIdleToErr(bool f_opened)
+    {
+        if (!f_opened)
+        {
+            state = ParseState::ERROR;
+        }
+    }
+
+
+    void RrmLogParser::transReadMetaToReadMeas()
+    {
+        if (found_table)
+        {
+            state = ParseState::READ_MEASUREMENTS;
+        }
+
+    }
+
+
+    void RrmLogParser::transReadMetaToErr()
+    {
+        if (file_state.eof_reached ||
+            file_state.read_err ||
+            parsing_error)
+        {
+            state = ParseState::ERROR;
+        }
+    }
+
+
+    void RrmLogParser::transReadMeasToReadSum(const std::vector<std::string> fields)
+    {
+        // Check if end of meas has been reached
+        if (string_helpers::isEmptyField(fields))
+        {
+            state = ParseState::COMPLETED;
+        }
+    }
+
+
+    void RrmLogParser::transReadMeasToErr(const std::vector<std::string> fields)
+    {   
+        // Change to err state if file loading err occurd, eof has been reached before summary or 
+        // the number of columns in the iteration doesn't match the one from the first read
+        if (
+            file_state.eof_reached ||
+            file_state.read_err ||
+            fields.size() != col_info.exp_n_columns
+
+        )
+        {
+            state = ParseState::ERROR;
+        }
+    }
+
+
+    void RrmLogParser::transReadSummaryCompleted(const std::vector<std::string>& fields)
+    {
+        // Check if end of summary has been reached
+        if (string_helpers::isEmptyField(fields))
+        {
+            state = ParseState::COMPLETED;
+        }
+    }
+
+
+    void RrmLogParser::transReadSummaryToErr()
+    {
+        if(file_state.eof_reached || file_state.read_err)
+        {
+            state = ParseState::ERROR;
+        }
+    }
+
+
+    void RrmLogParser::processStateIdle()
+    {
+        // Reset 
+        col_info = {};
+        file_state = {};
+        found_table = false;
+
+        // reset err information
+        parsing_error = false;
+        error_message.clear();
+
+    }
+
+
+    void RrmLogParser::processStateReadMeta(const std::vector<std::string> fields)
+    {
+        if (state == ParseState::READ_METADATA)
+        {
+            if (string_helpers::lowercaseTxt(fields.front()) == "count")
+            {
+                // Init column information
+                col_info.time_idx = string_helpers::findString(fields, "time");
+                col_info.step_idx = string_helpers::findString(fields, "step");
+                col_info.radial_force_idx = string_helpers::findString(fields, "radial load");
+                col_info.torque_idx = string_helpers::findString(fields, "torque");
+                col_info.exp_n_columns = fields.size();            
+                found_table = true;
+            }
+            else
+            {
+                storeKeyValue(
+                    fields,
+                    result.metadata,
+                    result.metadata_notes
+                );
+            }
+        }
+        
+    }
+
+
+    void RrmLogParser::processStateReadMeas(const std::vector<std::string> fields, std::size_t line_number, int step)
+    {
+        // Count measurement rows
+        ++result.n_meas_rows;
+
+        // Check if measurements belong to step
+        const auto row_step = string_helpers::stringToInt(
+            fields[col_info.step_idx],
+            "step",
+            line_number
+        );
+
+        // Read in data
+        if (row_step == step)
+        {
+            MeasurementSample sample;
+
+            sample.time_ms = string_helpers::stringToInt(
+                fields[col_info.time_idx],
+                "time",
+                line_number
+            );
+
+            sample.time_ms = string_helpers::stringToInt(
+                fields[col_info.radial_force_idx],
+                "radial load",
+                line_number
+            );
+
+            sample.time_ms = string_helpers::stringToInt(
+                fields[col_info.torque_idx],
+                "torque",
+                line_number
+            );
+
+            // Update result
+            result.meas_samples.push_back(sample);
+        }
+    }
+
+
+    void RrmLogParser::processStateReadSummary(const std::vector<std::string> fields)
+    {
+        storeKeyValue(
+            fields,
+            result.summary,
+            result.summary_notes
+        );
+    }
+
+
+    void RrmLogParser::processStateCompleted()
+    {
+    }
+
+
+    void RrmLogParser::processStateErr()
+    {
+    }
+
+ 
+    bool RrmLogParser::readNextLine(
+        std::istream& input,
+        std::size_t& line_number,
+        const std::string& delimiter,
+        std::vector<std::string>& fields
     )
     {
+        std::string line;
+
+        // Check if line could be read
+        if (!std::getline(input, line))
+        {
+            file_state.eof_reached = input.eof();
+            file_state.read_err = !input.eof();
+            fields.clear();
+            return false;
+        }
+
+        ++line_number;
+        file_state = {};
+
+        // Remove UTF-8 BOM from first line
+        if (line_number == 1 &&
+            line.compare(0, 3, "\xEF\xBB\xBF") == 0)
+        {
+            line.erase(0, 3);
+        }
+
+        // Split line into fields
+        fields = string_helpers::splitTxt(line, delimiter);
+
+        return true;
+    }
+    
+    
+    LogData RrmLogParser::parsFile(
+            const std::string& file_path,
+            int step,
+            const std::string& delimiter
+    )
+    {
+        // Init members
+        // init state
+        state = ParseState::IDLE;
+        // init storage for data
+        log_data_.reset();
+
+        // Reset result storage
+        result = {};
+        result.file_path = file_path;
+        // Defines the step in the log file to load
+        result.sel_step = step;
+        
+        // Represents current line number in file
+        std::size_t line_number = 0;
+        // Storage for each line
+        std::string line;
+
         // Open file
         std::ifstream input(file_path);
 
-        // Trow error if can't be opened
-        if (!input.is_open())
+        // Check if file has been opened
+        bool f_opened = input.is_open();
+
+        const bool line_read = false;
+
+        const std::vector<std::string> fields;
+        
+        
+        while (state!=ParseState::COMPLETED && state!=ParseState::ERROR)
         {
-            throw std::runtime_error(
-                "Cannot open log file: " + file_path
-            );
-        }
-
-        // Create result storage
-        LogData result;
-        result.file_path = file_path;
-        result.sel_step = step;
-
-        enum class Section
-        {
-            Metadata,
-            Measurements,
-            Summary
-        };
-
-        // Change state to Metadata -> load metadata
-        Section section = Section::Metadata;
-
-        // Define idx vars for each element to load
-        std::size_t time_idx = 0;
-        std::size_t step_idx = 0;
-        std::size_t radial_force_idx = 0;
-        std::size_t torque_idx = 0;
-        std::size_t exp_n_columns = 0;
-
-        bool found_table = false;
-        std::size_t line_number = 0;
-
-        std::string line;
-
-        while (std::getline(input, line))
-        {
-            ++line_number;
-
-            // Remove optional UTF-8 BOM 
-            if (line_number == 1 &&
-                line.compare(0, 3, "\xEF\xBB\xBF") == 0
-            )
+            // Read line
+            if (state != ParseState::IDLE)
             {
-                // Remove the first 3 UTF-8 bytes
-                line.erase(0, 3);
-            }
-            
-            // Split every element in line separated by ";" into one string and add to vector
-            const std::vector<std::string> fields = string_helpers::splitTxt(line, ";");
-            
-            // 
-            if (string_helpers::isEmptyField(fields))
-            {
-                if (section == Section::Measurements)
+                const bool line_read = static_cast<bool>(std::getline(input, line));
+
+                // Implement eof and read err checks
+                file_state.eof_reached = !line_read && input.eof();
+                file_state.read_err = !line_read && !input.eof();
+
+                // Prepare line information
+                if (line_read)
                 {
-                    section = Section::Summary;
+                    ++line_number;
                 }
 
-                continue;
-            }
-
-            // Metadata handling and measurement section preparation
-            if (section == Section::Metadata)
-            {
-                if (string_helpers::lowercaseTxt(fields.front()) == "count")
+                // Remove optional UTF-8 BOM from line
+                if (line_number == 1 &&
+                    line.compare(0, 3, "\xEF\xBB\xBF") == 0
+                )
                 {
-                    // Estimate column index for the columns we wanne extract
-                    time_idx = string_helpers::findString(fields, "time");
-                    step_idx = string_helpers::findString(fields, "step");
-                    radial_force_idx = string_helpers::findString(fields, "radial load");
-                    torque_idx = string_helpers::findString(fields, "torque");
-
-                    // Store n columns 
-                    exp_n_columns = fields.size();
-
-                    // Enter new state measurements
-                    section = Section::Measurements;
-                    found_table = true;
-
+                    // Remove the first 3 UTF-8 bytes
+                    line.erase(0, 3);
                 }
-                
-                // If we are still in section Metadata
-                else
+
+                // Split line into fields
+                const std::vector<std::string> fields = string_helpers::splitTxt(line, delimiter);
+            }            
+
+
+            // Run state machine
+            switch (state)
+            {
+                case ParseState::IDLE:
                 {
-                    // Store metadata as key value pairs
-                    storeKeyValue(
+                    transIdleToErr(f_opened);
+                    processStateIdle();
+                    transIdleToReadMeta(f_opened);
+                    break;
+                }
+
+                case ParseState::READ_METADATA:
+                {
+                    transReadMetaToErr();
+                    processStateReadMeta(fields);
+                    transReadMetaToReadMeas();
+                    break;
+                }
+
+                case ParseState::READ_MEASUREMENTS:
+                {
+                    transReadMeasToErr(fields);
+                    transReadMeasToReadSum(fields);
+                    processStateReadMeas(
                         fields,
-                        result.metadata,
-                        result.metadata_notes
+                        line_number,
+                        step
                     );
-                }
-            }
-            
-            // Handling of measurement table
-            else if (section == Section::Measurements)
-            {   
-                // Check if a least the needed columns exist
-                if (fields.size() != exp_n_columns)
-                {   
-                    // throw std::runtime_error(
-                    //     "Measurement row has too few columns at line " + std::to_string(line_number) +
-                    //     ". Data can't be extracted."                        
-                    // );
-                    throw std::runtime_error(
-                        "Invalid column count at line " +
-                        std::to_string(line_number) +
-                        ". Initial number of columns: " + std::to_string(exp_n_columns) +
-                        "\nCurrent number of columns" + std::to_string(fields.size())
-                    );                
-                }
+                    break;
+                }   
 
-                // Count every measurement row.
-                ++result.n_meas_table;
-
-                // Check if measurements belong to step -> store or nto -> don't store
-                // Get row number from log file 
-                const auto row_step = string_helpers::stringToInt(
-                    fields[step_idx],
-                    "step",
-                    line_number
-                );
-                
-                // Skip all steps not equal the one we are searching for
-                if (row_step != step)
+                case ParseState::READ_SUMMARY:
                 {
-                    continue;
+                    transReadSummaryToErr();
+                    processStateReadSummary(fields);
+                    transReadSummaryCompleted(fields);
+                    break;
                 }
 
-                // Store measurements
-                MeasurementSample sample;
+                case ParseState::COMPLETED:
+                {
+                    processStateCompleted();
+                    break;
+                }
 
-                sample.time_ms = string_helpers::stringToInt(
-                    fields[time_idx],
-                    "time",
-                    line_number
-                );
-
-                sample.radial_force = string_helpers::stringToDouble(
-                    fields[radial_force_idx],
-                    "radial load",
-                    line_number
-                );
-
-                sample.torque = string_helpers::stringToDouble(
-                    fields[torque_idx],
-                    "torque",
-                    line_number
-                );
-
-                result.meas_samples.push_back(sample);
+                case ParseState::ERROR:
+                {
+                    processStateErr();
+                    break;
+                }
             }
 
-            // Handling of summary section
-            else if (section == Section::Summary)
-            {
-                // Store summary
-                storeKeyValue(
-                    fields,
-                    result.summary,
-                    result.summary_notes
-                );
-            }
-            
-        }
-
-        if (input.bad())
-        {
-            throw std::runtime_error(
-                "I/O error while reading log file: " + file_path
-            );
-        }
-
-        // Verify if measurement table has been found
-        if (!found_table)
-        {
-            throw std::runtime_error(
-                "Measurement table header not found in: " + file_path
-            );
         }
 
         return result;
 
     }
-
     
 
 } // namespace rrm

@@ -233,7 +233,7 @@ void RrmLogParser::display_data(std::size_t n_rows) const
     std::cout
         << "File: " << data.file_path
         << "\nSelected step: " << data.sel_step
-        << "\nTotal measurement rows: " << data.n_meas_table
+        << "\nTotal measurement rows: " << data.n_meas_rows
         << "\nSelected samples: " << data.meas_samples.size()
         << '\n';
 
@@ -412,7 +412,7 @@ LogData RrmLogParser::parsFile(
             }
 
             // Count every measurement row.
-            ++result.n_meas_table;
+            ++result.n_meas_rows;
 
             // Check step before parsing numeric measurements.
             const auto row_step = readInteger(

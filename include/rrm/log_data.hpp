@@ -37,7 +37,7 @@ namespace rrm
         std::vector<MeasurementSample> meas_samples;
 
         // Stores total numbers of measurement table
-        std::size_t n_meas_table{0};
+        std::size_t n_meas_rows{0};
 
 
     };
