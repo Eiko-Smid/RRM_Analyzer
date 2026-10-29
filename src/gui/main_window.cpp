@@ -2,6 +2,9 @@
 #include "main_window.hpp"
 #include "measurement_widget.hpp"
 
+#include "rrm/rrm_log_parser.hpp"
+#include "rrm/measurement_analyzer.hpp"
+
 #include <QFileDialog>
 #include <QFont>
 #include <QHBoxLayout>
@@ -11,6 +14,11 @@
 #include <QSpinBox>
 #include <QVBoxLayout>
 #include <QWidget>
+#include <QMessageBox>
+#include <QStatusBar>
+
+#include <exception>
+
 
 
 // --------------------------------------------------
@@ -67,14 +75,16 @@ MainWindow::MainWindow(QWidget* parent)
     main_layout->addLayout(file_layout);
 
     // --------------------------------------------------
-    // Step selection and Analyze button
+    // Define widget for defining the step to read and button to start analysis of loaded data
     // --------------------------------------------------
     auto* control_layout = new QHBoxLayout();
 
+    //Define widget for setting step 
     step_spinbox_ = new QSpinBox(central_widget);
     step_spinbox_->setRange(0, 9999);
     step_spinbox_->setValue(5);
 
+    // Define analyze button
     analyze_button_ = new QPushButton(
         "Analyze",
         central_widget
@@ -94,10 +104,10 @@ MainWindow::MainWindow(QWidget* parent)
     main_layout->addLayout(control_layout);
 
     // --------------------------------------------------
-    // Measurement duration
+    // Define widget for displaying the duration
     // --------------------------------------------------
     duration_label_ = new QLabel(
-        "Warm-up duration: -- min",
+        "Duration: -- min",
         central_widget
     );
 
@@ -109,12 +119,14 @@ MainWindow::MainWindow(QWidget* parent)
     auto* panels_layout = new QHBoxLayout();
     panels_layout->setSpacing(12);
 
+    // Define measurement widget that displays radial force metrics and graph.
     radial_force_widget_ = new MeasurementWidget(
         "Radial Force",
         "N",
         central_widget
     );
 
+    // Define measurement widget that displays torque metrics and graph.
     torque_widget_ = new MeasurementWidget(
         "Torque",
         "Nm",
@@ -132,11 +144,21 @@ MainWindow::MainWindow(QWidget* parent)
     // --------------------------------------------------
     // Signal / slot connections
     // --------------------------------------------------
+    
+    // Define connection for file browsing.
     connect(
         browse_button,
         &QPushButton::clicked,
         this,
         &MainWindow::browseLogFile
+    );
+
+    // Define connection for analyze button.
+    connect(
+        analyze_button_,
+        &QPushButton::clicked,
+        this, 
+        &MainWindow::analyzeLogFile
     );
 }
 
@@ -145,6 +167,7 @@ MainWindow::MainWindow(QWidget* parent)
 // --------------------------------------------------
 void MainWindow::browseLogFile()
 {
+    // Stores filename.
     const QString file_path = QFileDialog::getOpenFileName(
         this,
         "Select RRM log file",
@@ -152,8 +175,74 @@ void MainWindow::browseLogFile()
         "Log files (*.log);;All files (*)"
     );
 
+    // Check if file exists -> enables analyze button.
     if (!file_path.isEmpty())
     {
         file_path_edit_->setText(file_path);
+        analyze_button_->setEnabled(true);
+
+        statusBar()->showMessage("Ready to analyze.");
     }
+}
+
+
+void MainWindow::analyzeLogFile()
+{
+    // Get analysis config from gui.
+    const std::string file_path = file_path_edit_->text().toStdString();
+    const int step = step_spinbox_->value();
+
+    // Output msg if file is empty.
+    if (file_path.empty())
+    {
+        QMessageBox::warning(
+            this,
+            "No log file",
+            "Please select a log file first."
+        );
+
+        return;
+    }
+
+    // Disable analyze button during analysis.
+    analyze_button_->setEnabled(false);
+    statusBar()->showMessage("Analyzing measurements...");
+
+    try
+    {
+        // Init objects.
+        rrm::RrmLogParser parser;
+        const rrm::MeasurementAnalyzer analyzer;
+
+        // Read data.
+        parser.load(file_path, step);
+
+        // Analyze loaded data
+        const rrm::MeasurementAnalysis analysis = analyzer.analyzeMeasurements(
+            parser.getData(),
+            step
+        );
+
+        // Report successful analysis.
+        statusBar()->showMessage(
+            QString("Analysis completed. Step %1, samples: %2")
+            .arg(analysis.step)
+            .arg(static_cast<qulonglong>(analysis.sample_count))
+        );
+    }
+    catch (const std::exception& e)
+    {
+        // Report that analysis failed
+        statusBar()->showMessage("Analysis failed.");
+
+        QMessageBox::critical(
+            this,
+            "Analysis failed",
+            QString::fromUtf8(e.what())
+        );
+    }
+
+    // Enable analysis button again for next analysis
+    analyze_button_->setEnabled(true);
+
 }

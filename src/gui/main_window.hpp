@@ -15,7 +15,16 @@ public:
     explicit MainWindow(QWidget* parent = nullptr);
 
 private:
+    /**
+     * @brief Method that reads the log file and checks if it is empty -> status bar msg or not.
+     */
     void browseLogFile();
+
+    /**
+     * @brief Method that reads the log file measurements and analyzes them. Reports to msg box if successful or not.
+     * Catches exception if something went wrong during log file read or analysis. 
+     */
+    void analyzeLogFile();
 
     // Input controls
     QLineEdit* file_path_edit_{nullptr};
