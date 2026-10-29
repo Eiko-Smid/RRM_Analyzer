@@ -47,7 +47,7 @@ namespace rrm
                 );
             }
 
-            // Initialize statistics using the first selected sample.
+            // Init statistics using the first selected sample.
             if (result.sample_count == 0)
             {
                 result.start_time_ms = sample.time_ms;

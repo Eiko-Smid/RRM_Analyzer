@@ -43,11 +43,22 @@ target_link_libraries(rrm_analyzer
     PRIVATE rrm_core
 )
 
-# Add test exe for testing code
+# Add test exe for testing log parser
 add_executable(test_log_parser
     tests/test_log_parser.cpp
+    
 )
 
 target_link_libraries(test_log_parser
     PRIVATE rrm_core
 )
+
+# Add test exe for testing measurement analyzer
+add_executable(test_measurement_analyzer
+    tests/test_measurement_analyzer.cpp
+)
+
+target_link_libraries(test_measurement_analyzer
+    PRIVATE rrm_core
+)
+
