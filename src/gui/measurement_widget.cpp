@@ -2,11 +2,25 @@
 #include "measurement_widget.hpp"
 #include "rrm/analysis_result.hpp"
 
-#include <QFrame>
+#include <QChart>
+#include <QChartView>
+#include <QLegend>
+#include <QLineSeries>
+#include <QValueAxis>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QPainter>
+#include <QPen>
+#include <QPushButton>
 #include <QVBoxLayout>
+#include <QBrush>
+#include <QColor>
+#include <QEvent>
+#include <QPalette>
+
+#include <algorithm>
+#include <cmath>
 
 // -----------------------------------------------------------------------------------
 // Define constants
@@ -25,8 +39,6 @@ MeasurementWidget::MeasurementWidget(
     QWidget* parent
 )
     : QGroupBox(title, parent), unit_(unit)
-
-    
 {
     // ------------------------------------------------------------
     // LAYOUT CONFIGURATION
@@ -116,25 +128,79 @@ MeasurementWidget::MeasurementWidget(
     main_layout->addLayout(stats_layout);
 
     // ------------------------------------------------------------
-    // TIME-SERIES CHART PLACEHOLDER
+    // TIME-SERIES CHART
     // ------------------------------------------------------------
-    auto* chart_placeholder = new QFrame(this);
 
-    chart_placeholder->setFrameShape(QFrame::StyledPanel);
-    chart_placeholder->setMinimumHeight(280);
+    // Define a line series for the measured values.
+    series_ = new QLineSeries();
 
-    auto* chart_layout = new QVBoxLayout(chart_placeholder);
+    // Create a chart and transfer ownership of the series to it.
+    auto* chart = new QChart();
+    chart->addSeries(series_);
+    chart->legend()->hide();
+    chart->setBackgroundVisible(false);
 
-    auto* chart_label = new QLabel(
-        "Time-series chart",
-        chart_placeholder
+    // Set the line width while keeping Qt's default series color.
+    QPen series_pen = series_->pen();
+    series_pen.setWidthF(1.5);
+    series_->setPen(series_pen);
+
+    // ------------------------------------------------------------
+    // DEFINE TIME AXIS
+    // ------------------------------------------------------------
+    time_axis_ = new QValueAxis();
+    time_axis_->setTitleText("Total time [min]");
+    time_axis_->setLabelFormat("%.2f");
+    time_axis_->setTickCount(6);
+    time_axis_->setRange(0.0, 1.0);
+
+    chart->addAxis(time_axis_, Qt::AlignBottom);
+    series_->attachAxis(time_axis_);
+
+    // ------------------------------------------------------------
+    // DEFINE MEASUREMENT VALUE AXIS
+    // ------------------------------------------------------------
+    value_axis_ = new QValueAxis();
+    value_axis_->setTitleText(QString("%1 [%2]").arg(title).arg(unit_));
+    value_axis_->setLabelFormat("%.2f");
+    value_axis_->setTickCount(6);
+    value_axis_->setRange(0.0, 1.0);
+
+    chart->addAxis(value_axis_, Qt::AlignLeft);
+    series_->attachAxis(value_axis_);
+
+    // ------------------------------------------------------------
+    // CREATE CHART VIEW
+    // ------------------------------------------------------------
+    chart_view_ = new QChartView(chart, this);
+    chart_view_->setMinimumHeight(280);
+    chart_view_->setRenderHint(QPainter::Antialiasing);
+
+    // Draw a rectangle with the mouse to zoom into the chart.
+    chart_view_->setRubberBand(QChartView::RectangleRubberBand);
+
+    main_layout->addWidget(chart_view_, 1);
+
+    // Add a button to restore the full chart after zooming.
+    auto* chart_controls = new QHBoxLayout();
+    chart_controls->addStretch();
+
+    auto* reset_zoom_button = new QPushButton("Reset zoom", this);
+    chart_controls->addWidget(reset_zoom_button);
+    main_layout->addLayout(chart_controls);
+
+    connect(
+        reset_zoom_button,
+        &QPushButton::clicked,
+        this,
+        [this]()
+        {
+            chart_view_->chart()->zoomReset();
+        }
     );
 
-    chart_label->setAlignment(Qt::AlignCenter);
-
-    chart_layout->addWidget(chart_label);
-
-    main_layout->addWidget(chart_placeholder, 1);
+    // Apply chart colors according to the current Qt palette.
+    updateChartColors();
 }
 
 
@@ -172,7 +238,6 @@ void MeasurementWidget::setStatistics(
 }
 
 
-
 void MeasurementWidget::resetStatistics()
 {
     // Reset statistic of widget
@@ -182,4 +247,178 @@ void MeasurementWidget::resetStatistics()
 
     min_time_label_->setText(DEFAULT_TIME_TEXT);
     max_time_label_->setText(DEFAULT_TIME_TEXT);
+}
+
+
+void MeasurementWidget::setTimeSeries(const QList<QPointF>& points)
+{
+    // Handle empty datasets by clearing the current chart.
+    if (points.isEmpty())
+    {
+        resetTimeSeries();
+        return;
+    }
+
+    // Restore the unzoomed axes before loading different measurements.
+    chart_view_->chart()->zoomReset();
+
+    // Replace all points at once rather than appending them individually.
+    series_->replace(points);
+
+    // Find the actual overall time range and value range in the data.
+    double min_x = points.first().x();
+    double max_x = min_x;
+    double min_y = points.first().y();
+    double max_y = min_y;
+
+    for (const QPointF& point : points)
+    {
+        min_x = std::min(min_x, point.x());
+        max_x = std::max(max_x, point.x());
+        min_y = std::min(min_y, point.y());
+        max_y = std::max(max_y, point.y());
+    }
+
+    // Use the original total measurement times on the X-axis.
+    // For a single timestamp, add a small range to keep the axis valid.
+    if (min_x == max_x)
+    {
+        time_axis_->setRange(min_x - 0.1, max_x + 0.1);
+    }
+    else
+    {
+        time_axis_->setRange(min_x, max_x);
+    }
+
+    // Add 5% padding so the curve does not touch the Y-axis limits.
+    const double y_range = max_y - min_y;
+    const double y_padding = (y_range > 0.0)
+        ? y_range * 0.05
+        : std::max(0.1, std::abs(min_y) * 0.05);
+
+    value_axis_->setRange(min_y - y_padding, max_y + y_padding);
+}
+
+
+void MeasurementWidget::resetTimeSeries()
+{
+    // Remove the zoom before returning the chart to its default state.
+    chart_view_->chart()->zoomReset();
+
+    series_->clear();
+
+    // Restore the axes until new data is loaded.
+    time_axis_->setRange(0.0, 1.0);
+    value_axis_->setRange(0.0, 1.0);
+}
+
+
+void MeasurementWidget::changeEvent(QEvent* event)
+{
+    // Let QGroupBox process the event normally.
+    QGroupBox::changeEvent(event);
+
+    // Reapply chart colors if the active Qt palette or style changes.
+    if (event->type() == QEvent::PaletteChange ||
+        event->type() == QEvent::ApplicationPaletteChange ||
+        event->type() == QEvent::StyleChange)
+    {
+        updateChartColors();
+    }
+}
+
+
+void MeasurementWidget::updateChartColors()
+{
+    // Ensure all chart components have been initialized.
+    if (!chart_view_ || !series_ || !time_axis_ || !value_axis_)
+        return;
+
+    // Retrieve colors from the current Qt widget palette.
+    const QPalette& current_palette = palette();
+
+    const QColor background_color =
+        current_palette.color(QPalette::Window);
+
+    const QColor text_color =
+        current_palette.color(QPalette::WindowText);
+
+    // Determine whether the current palette is dark or light.
+    const bool dark_mode = background_color.lightness() < 128;
+
+    // Select a blue curve color with good contrast against
+    // the current background.
+    const QColor curve_color = dark_mode
+        ? QColor("#38BDF8")
+        : QColor("#0369A1");
+
+    // Use less prominent colors for grid lines and axis lines.
+    QColor grid_color = text_color;
+    grid_color.setAlpha(55);
+
+    QColor axis_color = text_color;
+    axis_color.setAlpha(140);
+
+    // Match the chart background to the surrounding widget.
+    chart_view_->setBackgroundBrush(QBrush(background_color));
+
+    // ------------------------------------------------------------
+    // Apply colors to both axes
+    // ------------------------------------------------------------
+    
+    // Define identical fonts for both axes.
+    QFont labels_font = font();
+    labels_font.setPointSize(9);
+    labels_font.setBold(false);
+
+    QFont title_font = font();
+    title_font.setPointSize(10);
+    title_font.setBold(false);
+
+    const auto update_axis_colors =
+    [&](QValueAxis* axis)
+    {
+        // Configure the numerical tick labels.
+        axis->setLabelsFont(labels_font);
+        axis->setLabelsColor(text_color);
+
+        // Configure the axis title.
+        axis->setTitleFont(title_font);
+        axis->setTitleBrush(QBrush(text_color));
+
+        // Color of the grid lines.
+        axis->setGridLinePen(QPen(grid_color, 1.0));
+
+        // Color of the main axis line and tick marks.
+        axis->setLinePen(QPen(axis_color, 1.0));
+    };
+    
+    // const auto update_axis_colors =
+    //     [&](QValueAxis* axis)
+    //     {
+    //         // Color of the numerical tick labels.
+    //         axis->setLabelsColor(text_color);
+
+    //         // Color of the axis title.
+    //         axis->setTitleBrush(QBrush(text_color));
+
+    //         // Color of the grid lines.
+    //         axis->setGridLinePen(QPen(grid_color, 1.0));
+
+    //         // Color of the main axis line and tick marks.
+    //         axis->setLinePen(QPen(axis_color, 1.0));
+    //     };
+
+    update_axis_colors(time_axis_);
+    update_axis_colors(value_axis_);
+
+    // ------------------------------------------------------------
+    // Apply color to the measurement curve
+    // ------------------------------------------------------------
+    QPen series_pen = series_->pen();
+
+    series_pen.setColor(curve_color);
+    series_pen.setWidthF(1.5);
+
+    series_->setPen(series_pen);
 }

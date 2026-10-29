@@ -9,7 +9,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Find Qt libraries
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Charts)
 
 # --------------------------------------------------
 # Parser / analysis library
@@ -51,6 +51,7 @@ target_link_libraries(rrm_analyzer
     PRIVATE
         rrm_core
         Qt6::Widgets
+        Qt6::Charts
 )
 
 # Define test exe

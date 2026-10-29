@@ -9,6 +9,8 @@
 #include <QFont>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QList>
+#include <QPointF>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QSpinBox>
@@ -178,9 +180,7 @@ MainWindow::MainWindow(QWidget* parent)
     );
 }
 
-// --------------------------------------------------
-// File selection dialog
-// --------------------------------------------------
+
 void MainWindow::browseLogFile()
 {
     // Stores filename.
@@ -248,6 +248,33 @@ void MainWindow::analyzeLogFile()
         // Display analysis result
         displayAnalysis(analysis);
 
+        // --------------------------------------------------
+        // Prepare time-series data for both measurement charts
+        // --------------------------------------------------
+        const auto& samples = parser.getData().meas_samples;
+
+        QList<QPointF> radial_force_points;
+        QList<QPointF> torque_points;
+
+        // Reserve space for all loaded samples.
+        radial_force_points.reserve(static_cast<qsizetype>(samples.size()));
+        torque_points.reserve(static_cast<qsizetype>(samples.size()));
+
+        for (const auto& sample : samples)
+        {
+            // Convert the original total measurement time from ms to min.
+            // Do not subtract the start time of the selected step.
+            const double time_min =
+                static_cast<double>(sample.time_ms) * MS_TO_MIN;
+
+            radial_force_points.append(QPointF(time_min, sample.radial_force));
+            torque_points.append(QPointF(time_min, sample.torque));
+        }
+
+        // Display both time series.
+        radial_force_widget_->setTimeSeries(radial_force_points);
+        torque_widget_->setTimeSeries(torque_points);
+
         // Report successful analysis.
         statusBar()->showMessage(
             QString("Analysis completed. Step %1, samples: %2")
@@ -305,4 +332,8 @@ void MainWindow::resetAnalysisDisplay()
 
     radial_force_widget_->resetStatistics();
     torque_widget_->resetStatistics();
+
+    // Clear the charts when the selected file or step changes.
+    radial_force_widget_->resetTimeSeries();
+    torque_widget_->resetTimeSeries();
 }
