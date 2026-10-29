@@ -9,6 +9,13 @@ class QPushButton;
 class QSpinBox;
 class MeasurementWidget;
 
+
+namespace rrm
+{
+    struct MeasurementAnalysis;
+}
+
+
 class MainWindow : public QMainWindow
 {
 public:
@@ -25,6 +32,15 @@ private:
      * Catches exception if something went wrong during log file read or analysis. 
      */
     void analyzeLogFile();
+
+
+    /**
+     * @brief Displays the analysis results in the visu.
+     * @param Result of the analysis result that needs to be displayed.
+     */
+    void displayAnalysis(const rrm::MeasurementAnalysis& analysis);
+
+    void resetAnalysisDisplay();
 
     // Input controls
     QLineEdit* file_path_edit_{nullptr};

@@ -20,10 +20,14 @@
 #include <exception>
 
 
+// -----------------------------------------------------------------------------------
+// Define constants
+// -----------------------------------------------------------------------------------
+const double MS_TO_MIN = 1 / 60000.0;
 
-// --------------------------------------------------
-// Constructor
-// --------------------------------------------------
+// -----------------------------------------------------------------------------------
+// Implement class MainWindow
+// -----------------------------------------------------------------------------------
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
@@ -160,6 +164,18 @@ MainWindow::MainWindow(QWidget* parent)
         this, 
         &MainWindow::analyzeLogFile
     );
+
+    // Define connection and behavior if step value changes -> Reset statistics
+    connect(
+        step_spinbox_,
+        QOverload<int>::of(&QSpinBox::valueChanged),
+        this,
+        [this](int)
+        {
+            resetAnalysisDisplay();
+            statusBar()->showMessage("Ready to analyze.");
+        }
+    );
 }
 
 // --------------------------------------------------
@@ -175,11 +191,14 @@ void MainWindow::browseLogFile()
         "Log files (*.log);;All files (*)"
     );
 
-    // Check if file exists -> enables analyze button.
+    // Check if file exists -> enables analyze button and reset old statistics in visu.
     if (!file_path.isEmpty())
     {
         file_path_edit_->setText(file_path);
         analyze_button_->setEnabled(true);
+
+        // Reset old statistics if new file has choosen
+        resetAnalysisDisplay();
 
         statusBar()->showMessage("Ready to analyze.");
     }
@@ -204,6 +223,9 @@ void MainWindow::analyzeLogFile()
         return;
     }
 
+    // Clear previous analysis results.
+    resetAnalysisDisplay();
+
     // Disable analyze button during analysis.
     analyze_button_->setEnabled(false);
     statusBar()->showMessage("Analyzing measurements...");
@@ -222,6 +244,9 @@ void MainWindow::analyzeLogFile()
             parser.getData(),
             step
         );
+
+        // Display analysis result
+        displayAnalysis(analysis);
 
         // Report successful analysis.
         statusBar()->showMessage(
@@ -245,4 +270,39 @@ void MainWindow::analyzeLogFile()
     // Enable analysis button again for next analysis
     analyze_button_->setEnabled(true);
 
+}
+
+
+void MainWindow::displayAnalysis(const rrm::MeasurementAnalysis& analysis)
+{
+    // Display measurement duration.
+    const double duration_min =
+        static_cast<double>(analysis.duration_ms) * MS_TO_MIN;
+
+    duration_label_->setText(
+        QString("Measurement duration: %1 min")
+            .arg(duration_min, 0, 'f', 2)
+    );
+
+    // Display radial force statistics.
+    radial_force_widget_->setStatistics(
+        analysis.radial_force,
+        analysis.start_time_ms
+    );
+
+    // Display torque statistics.
+    torque_widget_->setStatistics(
+        analysis.torque,
+        analysis.start_time_ms
+    );
+}
+
+
+void MainWindow::resetAnalysisDisplay()
+{
+    // Reset all metrics in visu
+    duration_label_->setText("Measurement duration: -- min");
+
+    radial_force_widget_->resetStatistics();
+    torque_widget_->resetStatistics();
 }
