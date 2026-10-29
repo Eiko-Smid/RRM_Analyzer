@@ -61,6 +61,9 @@ private:
     // Apply colors from the current Qt palette to the chart.
     void updateChartColors();
 
+    // Draw horizontal statistic lines across the measurement time range.
+    void updateStatisticLines();
+
     // Statistical value labels
     QLabel* mean_value_label_{nullptr};
     QLabel* min_value_label_{nullptr};
@@ -72,8 +75,17 @@ private:
     // Time-series chart components
     QChartView* chart_view_{nullptr};
     QLineSeries* series_{nullptr};
+    QLineSeries* mean_series_{nullptr};
+    QLineSeries* min_series_{nullptr};
+    QLineSeries* max_series_{nullptr};
     QValueAxis* time_axis_{nullptr};
     QValueAxis* value_axis_{nullptr};
+
+    // Statistical values for the horizontal reference lines
+    double mean_value_{0.0};
+    double min_value_{0.0};
+    double max_value_{0.0};
+    bool has_statistics_{false};
 
     // Unit of the displayed measurement quantity
     QString unit_;

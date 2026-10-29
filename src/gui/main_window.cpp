@@ -27,6 +27,11 @@
 // -----------------------------------------------------------------------------------
 const double MS_TO_MIN = 1 / 60000.0;
 
+// Define step constraints
+constexpr int MIN_STEP = 1;
+constexpr int MAX_STEP = 9999;
+constexpr int DEFAULT_STEP = 5;
+
 // -----------------------------------------------------------------------------------
 // Implement class MainWindow
 // -----------------------------------------------------------------------------------
@@ -87,8 +92,8 @@ MainWindow::MainWindow(QWidget* parent)
 
     //Define widget for setting step 
     step_spinbox_ = new QSpinBox(central_widget);
-    step_spinbox_->setRange(0, 9999);
-    step_spinbox_->setValue(5);
+    step_spinbox_->setRange(MIN_STEP, MAX_STEP);
+    step_spinbox_->setValue(DEFAULT_STEP);
 
     // Define analyze button
     analyze_button_ = new QPushButton(

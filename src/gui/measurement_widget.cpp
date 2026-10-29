@@ -28,6 +28,7 @@
 const double MS_TO_MIN = 1 / 60000.0;
 const QString DEFAULT_VALUE_TEXT = "-- ";
 const QString DEFAULT_TIME_TEXT = "-- min";
+const double REFERENCE_LINE_WIDTH = 1.5;
 
 
 // ------------------------------------------------------------
@@ -134,9 +135,18 @@ MeasurementWidget::MeasurementWidget(
     // Define a line series for the measured values.
     series_ = new QLineSeries();
 
+    // Define horizontal reference series for the computed metrics.
+    mean_series_ = new QLineSeries();
+    min_series_ = new QLineSeries();
+    max_series_ = new QLineSeries();
+
     // Create a chart and transfer ownership of the series to it.
     auto* chart = new QChart();
     chart->addSeries(series_);
+    chart->addSeries(mean_series_);
+    chart->addSeries(min_series_);
+    chart->addSeries(max_series_);
+
     chart->legend()->hide();
     chart->setBackgroundVisible(false);
 
@@ -156,6 +166,9 @@ MeasurementWidget::MeasurementWidget(
 
     chart->addAxis(time_axis_, Qt::AlignBottom);
     series_->attachAxis(time_axis_);
+    mean_series_->attachAxis(time_axis_);
+    min_series_->attachAxis(time_axis_);
+    max_series_->attachAxis(time_axis_);
 
     // ------------------------------------------------------------
     // DEFINE MEASUREMENT VALUE AXIS
@@ -168,6 +181,9 @@ MeasurementWidget::MeasurementWidget(
 
     chart->addAxis(value_axis_, Qt::AlignLeft);
     series_->attachAxis(value_axis_);
+    mean_series_->attachAxis(value_axis_);
+    min_series_->attachAxis(value_axis_);
+    max_series_->attachAxis(value_axis_);
 
     // ------------------------------------------------------------
     // CREATE CHART VIEW
@@ -235,6 +251,13 @@ void MeasurementWidget::setStatistics(
     max_time_label_->setText(
         QString("%1 min").arg(max_time_min, 0, 'f', 2)
     );
+
+    // Save the metrics and update their horizontal lines.
+    mean_value_ = stats.mean;
+    min_value_ = stats.min.value;
+    max_value_ = stats.max.value;
+    has_statistics_ = true;
+    updateStatisticLines();
 }
 
 
@@ -247,6 +270,12 @@ void MeasurementWidget::resetStatistics()
 
     min_time_label_->setText(DEFAULT_TIME_TEXT);
     max_time_label_->setText(DEFAULT_TIME_TEXT);
+
+    // Clear the reference lines when statistics are reset.
+    has_statistics_ = false;
+    mean_series_->clear();
+    min_series_->clear();
+    max_series_->clear();
 }
 
 
@@ -297,6 +326,9 @@ void MeasurementWidget::setTimeSeries(const QList<QPointF>& points)
         : std::max(0.1, std::abs(min_y) * 0.05);
 
     value_axis_->setRange(min_y - y_padding, max_y + y_padding);
+
+    // Extend metric lines across the newly loaded time range.
+    updateStatisticLines();
 }
 
 
@@ -306,10 +338,40 @@ void MeasurementWidget::resetTimeSeries()
     chart_view_->chart()->zoomReset();
 
     series_->clear();
+    mean_series_->clear();
+    min_series_->clear();
+    max_series_->clear();
 
     // Restore the axes until new data is loaded.
     time_axis_->setRange(0.0, 1.0);
     value_axis_->setRange(0.0, 1.0);
+}
+
+
+void MeasurementWidget::updateStatisticLines()
+{
+    // Wait until statistics and measurement points are available.
+    if (!has_statistics_ || series_->count() == 0)
+        return;
+
+    const double min_time = time_axis_->min();
+    const double max_time = time_axis_->max();
+
+    // Two points define each horizontal line.
+    mean_series_->replace(QList<QPointF>{
+        QPointF(min_time, mean_value_),
+        QPointF(max_time, mean_value_)
+    });
+
+    min_series_->replace(QList<QPointF>{
+        QPointF(min_time, min_value_),
+        QPointF(max_time, min_value_)
+    });
+
+    max_series_->replace(QList<QPointF>{
+        QPointF(min_time, max_value_),
+        QPointF(max_time, max_value_)
+    });
 }
 
 
@@ -331,7 +393,8 @@ void MeasurementWidget::changeEvent(QEvent* event)
 void MeasurementWidget::updateChartColors()
 {
     // Ensure all chart components have been initialized.
-    if (!chart_view_ || !series_ || !time_axis_ || !value_axis_)
+    if (!chart_view_ || !series_ || !mean_series_ || !min_series_ ||
+        !max_series_ || !time_axis_ || !value_axis_)
         return;
 
     // Retrieve colors from the current Qt widget palette.
@@ -351,6 +414,19 @@ void MeasurementWidget::updateChartColors()
     const QColor curve_color = dark_mode
         ? QColor("#38BDF8")
         : QColor("#0369A1");
+
+    // Use distinct, theme-aware colors for mean, minimum and maximum.
+    const QColor mean_color = dark_mode
+        ? QColor("#FBBF24")
+        : QColor("#A16207");
+
+    const QColor min_color = dark_mode
+        ? QColor("#4ADE80")
+        : QColor("#15803D");
+
+    const QColor max_color = dark_mode
+        ? QColor("#FB7185")
+        : QColor("#BE123C");
 
     // Use less prominent colors for grid lines and axis lines.
     QColor grid_color = text_color;
@@ -392,22 +468,6 @@ void MeasurementWidget::updateChartColors()
         // Color of the main axis line and tick marks.
         axis->setLinePen(QPen(axis_color, 1.0));
     };
-    
-    // const auto update_axis_colors =
-    //     [&](QValueAxis* axis)
-    //     {
-    //         // Color of the numerical tick labels.
-    //         axis->setLabelsColor(text_color);
-
-    //         // Color of the axis title.
-    //         axis->setTitleBrush(QBrush(text_color));
-
-    //         // Color of the grid lines.
-    //         axis->setGridLinePen(QPen(grid_color, 1.0));
-
-    //         // Color of the main axis line and tick marks.
-    //         axis->setLinePen(QPen(axis_color, 1.0));
-    //     };
 
     update_axis_colors(time_axis_);
     update_axis_colors(value_axis_);
@@ -421,4 +481,29 @@ void MeasurementWidget::updateChartColors()
     series_pen.setWidthF(1.5);
 
     series_->setPen(series_pen);
+
+    // Draw statistic lines dashed to distinguish them from measurements.
+    const auto set_reference_pen = [](QLineSeries* line, const QColor& color)
+    {
+        QPen reference_pen(color);
+        reference_pen.setWidthF(REFERENCE_LINE_WIDTH);
+        reference_pen.setStyle(Qt::DashLine);
+        line->setPen(reference_pen);
+    };
+
+    set_reference_pen(mean_series_, mean_color);
+    set_reference_pen(min_series_, min_color);
+    set_reference_pen(max_series_, max_color);
+
+    // Match displayed metric values to the chart line colors.
+    const auto set_value_label_color = [](QLabel* label, const QColor& color)
+    {
+        QPalette label_palette = label->palette();
+        label_palette.setColor(QPalette::WindowText, color);
+        label->setPalette(label_palette);
+    };
+
+    set_value_label_color(mean_value_label_, mean_color);
+    set_value_label_color(min_value_label_, min_color);
+    set_value_label_color(max_value_label_, max_color);
 }

@@ -88,7 +88,18 @@ namespace rrm
         const std::string& delimiter
     )
     {
+        // Load data.
         log_data_ = parsFile(file_path, step, delimiter);
+
+        // Reject a selected step that was not found 
+        if (step && log_data_->parse_status == ParseStatus::Complete && !selected_step_seen)
+        {
+            clear();
+            throw std::runtime_error(
+                "Step " + std::to_string(*step) +
+                " not part of file. Please choose another step."
+            );
+        }
     }
 
 
