@@ -46,6 +46,12 @@ MeasurementWidget::MeasurementWidget(
     // LAYOUT CONFIGURATION
     // ------------------------------------------------------------
 
+    // Set bold title for the measurement panel
+    setObjectName("measurementPanel");
+    setStyleSheet(
+        "QGroupBox#measurementPanel { font-weight: bold; }"
+    );
+
     // A: Gap between labels and their values/units
     constexpr int label_value_gap_px = 30;
 

@@ -79,7 +79,12 @@ MainWindow::MainWindow(QWidget* parent)
         central_widget
     );
 
-    file_layout->addWidget(new QLabel("Log file:", central_widget));
+    // file_layout->addWidget(new QLabel("Log file:", central_widget));
+    auto* file_label = new QLabel("Log file:", central_widget);
+    file_label->setStyleSheet("font-weight: bold;");
+    file_layout->addWidget(file_label);
+
+
     file_layout->addWidget(file_path_edit_, 1);
     file_layout->addWidget(browse_button);
 
@@ -104,9 +109,12 @@ MainWindow::MainWindow(QWidget* parent)
     // Analysis will be implemented in the next step
     analyze_button_->setEnabled(false);
 
-    control_layout->addWidget(
-        new QLabel("Measurement step:", central_widget)
-    );
+    // control_layout->addWidget(
+    //     new QLabel("Measurement step:", central_widget)
+    // );
+    auto* step_label = new QLabel("Measurement step:", central_widget);
+    step_label->setStyleSheet("font-weight: bold;");
+    control_layout->addWidget(step_label);
 
     control_layout->addWidget(step_spinbox_);
     control_layout->addStretch();
@@ -118,10 +126,14 @@ MainWindow::MainWindow(QWidget* parent)
     // Define widget for displaying the duration
     // --------------------------------------------------
     duration_label_ = new QLabel(
-        "Duration: -- min",
+        "Measurement duration: -- min",
         central_widget
     );
 
+    // Same font size and weight as Measurement step
+    duration_label_->setStyleSheet("font-weight: bold;");
+
+    // Add widget to the main layout
     main_layout->addWidget(duration_label_);
 
     // --------------------------------------------------
