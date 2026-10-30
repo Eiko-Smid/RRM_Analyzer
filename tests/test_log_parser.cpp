@@ -12,6 +12,7 @@ namespace
     constexpr char DEFAULT_LOG_PATH[] = "data/202211302134.log";
 }
 
+
 int main(int argc, char* argv[])
 {
     const std::string file_path = (argc > 1)

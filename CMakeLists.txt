@@ -1,4 +1,6 @@
-
+# --------------------------------------------------
+# General settings
+# --------------------------------------------------
 cmake_minimum_required(VERSION 3.16)
 
 project(InMessRrmAnalyzer LANGUAGES CXX)
@@ -37,7 +39,7 @@ endif()
 
 
 # --------------------------------------------------
-# Executable
+# Executables
 # --------------------------------------------------
 
 # Define main exe and gui

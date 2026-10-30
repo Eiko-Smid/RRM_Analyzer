@@ -88,6 +88,11 @@ desktop.ini
 
 
 # ==========================================
-# General folders to ignore
+# Ignore log files beside validation files for the tests
 # ==========================================
-/data/
+# Ignore all log files
+*.log
+
+# Allow specific test log files
+!/data/202211302134.log
+!/data/invalid_log_file.log
