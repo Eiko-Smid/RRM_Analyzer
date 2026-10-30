@@ -1,5 +1,6 @@
 # RRM Measurement Analyzer
 
+<img src="images/rrm_gui.png" alt="RRM Analyzer Screenshot" width="100%">
 
 ## 1. Project Overview
 
