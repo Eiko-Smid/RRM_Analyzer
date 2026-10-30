@@ -22,6 +22,13 @@ namespace rrm
     // Implement Helper functions
     // -----------------------------------------------------------------------------------    
     
+    /**
+     * @brief Stores parsed fields as a key-value pair or a standalone note. Ignores empty fields and uses 
+     * the first two fields for key-value pairs.
+     * @param fields Vector containing the parsed fields of a log file line.
+     * @param values Map used to store key-value pairs.
+     * @param notes Vector used to store standalone text entries.
+     */
     void storeKeyValue(
         const std::vector<std::string>& fields,
         std::unordered_map<std::string, std::string>& values,
@@ -49,6 +56,13 @@ namespace rrm
     }
 
 
+    /**
+     * @brief Prints a section of the log data to the console. Displays standalone notes first, followed 
+     * by key-value pairs sorted alphabetically by key.
+     * @param title Title displayed above the section.
+     * @param values Map containing the key-value pairs to display.
+     * @param notes Vector containing standalone text entries to display.
+     */
     void printSection(
         const char* title,
         const std::unordered_map<std::string, std::string>& values,
@@ -67,6 +81,7 @@ namespace rrm
 
         std::sort(sorted.begin(), sorted.end());
 
+        // Output section
         for (const auto& entry : sorted)
         {
             std::cout << "  " << entry.first
@@ -170,6 +185,7 @@ namespace rrm
 
     const LogData& RrmLogParser::getData() const
     {
+        // Returns reference to log data if existing, throws error else.
         if (!log_data_)
         {
             throw std::logic_error(
@@ -247,7 +263,7 @@ namespace rrm
 
     void RrmLogParser::transReadMeasToErr()
     {   
-        // Change to err state if file loading err occurd, eof has been reached before summary or 
+        // Change to err state if file loading err occurred, eof has been reached before summary or 
         // a measurement row could not be validated by the state method.
         if (state == ParseState::READ_MEASUREMENTS &&
             (file_state.eof_reached || file_state.read_err || parsing_error))
@@ -259,7 +275,7 @@ namespace rrm
 
     void RrmLogParser::transReadSummaryCompleted()
     {
-        // Check if end of summary has been reached
+        // Check if data has been loaded correctly without errors
         if (state == ParseState::READ_SUMMARY && file_state.eof_reached &&
             log_stopped_found && !file_state.read_err && !parsing_error)
         {
@@ -279,8 +295,6 @@ namespace rrm
     }
 
 
-    // Reads one line per call. This is a helper used by the three
-    // reading-state methods, not a transition or a separate FSM state.
     bool RrmLogParser::readNextLine(
         std::istream& input,
         std::size_t& line_number,
@@ -294,8 +308,7 @@ namespace rrm
         // Read line
         if (!std::getline(input, line))
         {
-            // EOF is normal at the end of a complete log. A different
-            // read failure must be distinguished from that normal EOF.
+            // Store states when reading fails for later analysis. 
             file_state.eof_reached = input.eof();
             file_state.read_err = input.bad() || (!input.eof() && input.fail());
             fields.clear();
@@ -305,15 +318,15 @@ namespace rrm
         ++line_number;
         file_state = {};
 
-        // Remove optional UTF-8 BOM from line
+        // Remove optional UTF-8 BOM from line.
         if (line_number == 1 &&
             line.compare(0, 3, "\xEF\xBB\xBF") == 0)
         {
-            // Remove the first 3 UTF-8 bytes
+            // Remove the first 3 UTF-8 bytes.
             line.erase(0, 3);
         }
 
-        // Split line into fields
+        // Split line into fields.
         fields = string_helpers::splitTxt(line, delimiter);
         return true;
     }
@@ -331,7 +344,7 @@ namespace rrm
         file_state = {};
         found_table = false;
 
-        // reset err information
+        // reset err information.
         parsing_error = false;
         error_message.clear();
 
@@ -364,19 +377,22 @@ namespace rrm
         const std::string& delimiter
     )
     {   
+        // Define storage for rows.
         std::vector<std::string> fields;
 
         try
         {
+            // Try to read next line.
             if (!readNextLine(input, line_number, delimiter, fields))
             {
-                // The header was interrupted before its column names appeared.
+                // EOF reached before the measurement table header was found.
                 error_message = file_state.eof_reached
                     ? "Unexpected EOF in metadata: measurement header missing"
                     : "File reading error in metadata";
                 return;
             }
 
+            // Detect first line of measurement table inside log file.
             if (string_helpers::lowercaseTxt(fields.front()) == "count")
             {
                 // Init column information
@@ -398,7 +414,7 @@ namespace rrm
         }
         catch (const std::exception& e)
         {
-            // Save the error instead of losing previously parsed metadata.
+            // // Store the parsing error while preserving previously loaded metadata.
             parsing_error = true;
             error_message = e.what();
         }
@@ -412,10 +428,12 @@ namespace rrm
         std::optional<int> step
     )
     {
+        // Define storage for rows.
         std::vector<std::string> fields;
 
         try
         {
+            // Try to read next line
             if (!readNextLine(input, line_number, delimiter, fields))
             {
                 error_message = file_state.eof_reached
@@ -424,17 +442,18 @@ namespace rrm
                 return;
             }
 
-            // A separator ends the measurement table. It is not a sample.
+            // Check of ";" was found after reading the measurement table. If so next section is summary.
             if (string_helpers::isEmptyField(fields))
             {
+                // Indicate separator, separating meas section from summary has been found.
+                // -> Meas section readed successful
                 meas_separator_found = true;
+
                 if (step && selected_step_seen)
                     result.selected_step_finished = true;
                 return;
             }
-
-            // Validate the presence of the required columns. A missing
-            // trailing empty field is acceptable for these RRM log files.
+            
             const std::size_t required_width = std::max({
                 col_info.time_idx,
                 col_info.step_idx,
@@ -442,9 +461,8 @@ namespace rrm
                 col_info.torque_idx
             }) + 1;
 
-            const bool valid_width =
-                fields.size() == col_info.exp_n_columns ||
-                fields.size() + 1 == col_info.exp_n_columns;
+            // Validate that the current number of columns equals expected number of columns.
+            const bool valid_width = fields.size() == col_info.exp_n_columns; 
 
             if (fields.size() < required_width || !valid_width)
             {
@@ -457,21 +475,21 @@ namespace rrm
                 );
             }
 
-            // Count measurement rows
+            // Count measurement rows.
             ++result.n_meas_rows;
 
-            // Check if measurements belong to step
+            // Check if measurements belong to step.
             const auto row_step = string_helpers::stringToInt(
                 fields[col_info.step_idx],
                 "step",
                 line_number
             );
 
-            // Record if a later step was seen after the selected one.
+            // Record if an earlier step was seen after the selected one.
             if (step && selected_step_seen && row_step != *step)
                 result.selected_step_finished = true;
 
-            // Read in data
+            // Read in data.
             if (!step || row_step == *step)
             {
                 if (step)
@@ -520,10 +538,12 @@ namespace rrm
         const std::string& delimiter
     )
     {
+        // Define storage for rows.
         std::vector<std::string> fields;
 
         try
         {
+            // // Try to read next line.
             if (!readNextLine(input, line_number, delimiter, fields))
             {
                 if (file_state.read_err)
@@ -533,14 +553,12 @@ namespace rrm
                 return;
             }
 
-            // The summary includes empty separator lines; ignore them.
+            // Ignore empty summary lines.
             if (string_helpers::isEmptyField(fields))
                 return;
-
-            // Detect the final completion marker without finishing early.
-            const std::string first_field =
-                string_helpers::lowercaseTxt(fields.front());
-
+            
+            // Check if log stopped text has been found -> end reached.
+            const std::string first_field = string_helpers::lowercaseTxt(fields.front());
             if (first_field.find("log stopped:") == 0)
                 log_stopped_found = true;
 
@@ -560,7 +578,7 @@ namespace rrm
 
     void RrmLogParser::processStateCompleted(bool& finished)
     {
-        // A complete log must have the final 'log stopped:' marker.
+        // Mark the log read as a success.
         result.parse_status = ParseStatus::Complete;
         result.parse_message.clear();
         finished = true;
@@ -569,23 +587,24 @@ namespace rrm
 
     void RrmLogParser::processStateErr(bool& finished)
     {
-        // An unexpected EOF means a truncated file; all other failures
-        // are parsing or I/O errors. Keep successfully loaded samples.
+        // Store the information that the reading failed.
         result.parse_status = (file_state.eof_reached &&
                                !file_state.read_err && !parsing_error)
             ? ParseStatus::Incomplete
             : ParseStatus::Error;
+
+        // Store the loaded data anyway
         result.parse_message = error_message;
         finished = true;
     }
     
+
     LogData RrmLogParser::parsFile(
         const std::string& file_path,
         std::optional<int> step,
         const std::string& delimiter
     )
     {
-        // Init members
         // init state
         state = ParseState::IDLE;
 
@@ -598,7 +617,7 @@ namespace rrm
         // Check if file has been opened
         const bool f_opened = input.is_open();
 
-        // Only terminal states set this flag, so they run inside the FSM.
+        // Store information if loading has been finished
         bool finished = false;
 
         while (!finished)
