@@ -1,252 +1,337 @@
-
-#include "rrm/rrm_log_parser.hpp"
 #include "rrm/measurement_analyzer.hpp"
+#include "rrm/rrm_log_parser.hpp"
 
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
-
-// ------------------------------------------------------------
-// Global defs
-// ------------------------------------------------------------
 namespace
-{   
-    // Define default path of log file to load for integration test.
+{
     constexpr char DEFAULT_LOG_PATH[] = "data/202211302134.log";
-}
+    constexpr int TEST_STEP = 5;
+    constexpr double TOLERANCE = 1e-9;
 
-// ------------------------------------------------------------
-// Test helpers
-// ------------------------------------------------------------
-
-/**
- * @brief Checks whether two double values are equal within a certain threshold.
- *
- * @param actual Actual computed value.
- * @param expected Expected reference value.
- * @param threshold Maximum allowed absolute difference. Default is 1e-9.
- */
-void checkEqualDouble(
-    double actual,
-    double expected,
-    double threshold = 1e-9
-)
-{
-    // Validate threshold.
-    if (!std::isfinite(threshold) || threshold < 0.0)
+    /** @brief Fails the test when a condition is not satisfied. */
+    void require(bool condition, const std::string& message)
     {
-        throw std::invalid_argument(
-            "Threshold must be finite and non-negative."
-        );
+        if (!condition)
+        {
+            throw std::runtime_error(message);
+        }
     }
 
-    // Check if values are equal within the threshold.
-    if (
-        !std::isfinite(actual) ||
-        !std::isfinite(expected) ||
-        std::abs(actual - expected) > threshold
+    /** @brief Checks floating-point results using an absolute tolerance. */
+    void requireNear(
+        double actual,
+        double expected,
+        const std::string& metric,
+        double tolerance = TOLERANCE
     )
     {
-        throw std::runtime_error(
-            "Test failed: Expected " + std::to_string(expected) +
-            ", got " + std::to_string(actual) +
-            ", threshold: " + std::to_string(threshold)
+        if (!std::isfinite(actual) || !std::isfinite(expected) ||
+            std::abs(actual - expected) > tolerance)
+        {
+            throw std::runtime_error(
+                metric + ": expected " + std::to_string(expected) +
+                ", got " + std::to_string(actual)
+            );
+        }
+    }
+
+    /** @brief Verifies that an operation throws the expected exception. */
+    template <typename Exception, typename Function>
+    void requireThrows(Function&& operation, const std::string& message)
+    {
+        try
+        {
+            std::forward<Function>(operation)();
+        }
+        catch (const Exception&)
+        {
+            return;
+        }
+
+        throw std::runtime_error(message);
+    }
+
+    /** @brief Creates known measurements, including other steps to filter out. */
+    [[nodiscard]] rrm::LogData makeTestData()
+    {
+        rrm::LogData data{};
+        data.parse_status = rrm::ParseStatus::Complete;
+        data.sel_step = std::nullopt;
+
+        // MeasurementSample fields: step, time_ms, radial_force, torque.
+        data.meas_samples = {
+            {2,  500, 100.0, 100.0},
+            {5, 1000,  10.0,   3.0},
+            {5, 2000,  30.0,   7.0},
+            {5, 4000,  20.0,   5.0},
+            {6, 5000, 100.0, 100.0}
+        };
+
+        return data;
+    }
+
+    /** @brief Compares all analyzer outputs with independently known values. */
+    void testKnownStatistics()
+    {
+        std::cout << "\n--- Test 1: Known measurement statistics ---\n";
+
+        const rrm::LogData data = makeTestData();
+        const rrm::MeasurementAnalyzer analyzer;
+        const auto result = analyzer.analyzeMeasurements(data, TEST_STEP);
+
+        // Other steps must not influence sample count or time calculations.
+        require(result.step == TEST_STEP, "Analyzed step is incorrect.");
+        require(result.sample_count == 3, "Sample count is incorrect.");
+        require(result.start_time_ms == 1000, "Start time is incorrect.");
+        require(result.duration_ms == 3000, "Duration is incorrect.");
+
+        // Radial force: 10, 30, 20 -> mean 20, min 10, max 30.
+        requireNear(result.radial_force.mean, 20.0, "Radial force mean");
+        requireNear(result.radial_force.min.value, 10.0, "Radial force min");
+        requireNear(result.radial_force.max.value, 30.0, "Radial force max");
+        require(result.radial_force.min.time_ms == 1000,
+                "Radial force minimum timestamp is incorrect.");
+        require(result.radial_force.max.time_ms == 2000,
+                "Radial force maximum timestamp is incorrect.");
+
+        // Torque: 3, 7, 5 -> mean 5, min 3, max 7.
+        requireNear(result.torque.mean, 5.0, "Torque mean");
+        requireNear(result.torque.min.value, 3.0, "Torque min");
+        requireNear(result.torque.max.value, 7.0, "Torque max");
+        require(result.torque.min.time_ms == 1000,
+                "Torque minimum timestamp is incorrect.");
+        require(result.torque.max.time_ms == 2000,
+                "Torque maximum timestamp is incorrect.");
+
+        std::cout << "PASSED: All computed metrics match expected values.\n";
+    }
+
+    /** @brief Rejects incomplete or invalid parser results. */
+    void testParseStatusValidation()
+    {
+        std::cout << "\n--- Test 2: Parse status validation ---\n";
+
+        rrm::LogData data = makeTestData();
+        const rrm::MeasurementAnalyzer analyzer;
+
+        data.parse_status = rrm::ParseStatus::Incomplete;
+        requireThrows<std::runtime_error>(
+            [&] { (void)analyzer.analyzeMeasurements(data, TEST_STEP); },
+            "Incomplete log data must be rejected."
         );
+
+        data.parse_status = rrm::ParseStatus::Error;
+        requireThrows<std::runtime_error>(
+            [&] { (void)analyzer.analyzeMeasurements(data, TEST_STEP); },
+            "Invalid log data must be rejected."
+        );
+
+        std::cout << "PASSED: Incomplete and invalid data rejected.\n";
     }
-}
 
-
-// ------------------------------------------------------------
-// Test 1: Analyzer with known measurements
-// ------------------------------------------------------------
-
-/**
- * @brief Tests the analyzer using manually defined data anc compares it against epected
- * results
- * 
- */
-void testMeasAnalyzer()
-{
-    std::cout << "\n--- Test 1: Analyzer ---\n";
-    
-    // Define expected results
-    // Define step and sample count    
-    constexpr int STEP = 5;
-    constexpr std::size_t EXPECTED_SAMPLE_COUNT = 3;
-
-    // Expected timestamps and duration.
-    constexpr std::int64_t EXPECTED_START_TIME_MS = 1000;
-    constexpr std::int64_t EXPECTED_DURATION_MS = 3000;
-
-    // Expected radial force statistics.
-    constexpr double EXPECTED_RADIAL_MEAN = 20.0;
-    constexpr double EXPECTED_RADIAL_MIN = 10.0;
-    constexpr double EXPECTED_RADIAL_MAX = 30.0;
-
-    constexpr std::int64_t EXPECTED_RADIAL_MIN_TIME_MS = 1000;
-    constexpr std::int64_t EXPECTED_RADIAL_MAX_TIME_MS = 2000;
-
-    // Expected torque statistics.
-    constexpr double EXPECTED_TORQUE_MEAN = 5.0;
-    constexpr double EXPECTED_TORQUE_MIN = 3.0;
-    constexpr double EXPECTED_TORQUE_MAX = 7.0;
-
-    constexpr std::int64_t EXPECTED_TORQUE_MIN_TIME_MS = 1000;
-    constexpr std::int64_t EXPECTED_TORQUE_MAX_TIME_MS = 2000;
-
-    // Simulate data
-    // Define simulated measurements.
-    rrm::LogData data;
-    data.parse_status = rrm::ParseStatus::Complete;
-    data.sel_step = std::nullopt;
-
-    data.meas_samples = {
-        // step, time_ms, radial_force, torque
-        {2,  500, 100.0, 100.0},
-        {5, 1000,  10.0,   3.0},
-        {5, 2000,  30.0,   7.0},
-        {5, 4000,  20.0,   5.0},
-        {6, 5000, 100.0, 100.0}
-    };
-
-    // Analyze step 5.
-    rrm::MeasurementAnalyzer analyzer;
-    const auto result = analyzer.analyzeMeasurements(data, STEP);
-
-    // Verify results
-    // Verify general metrics.
-    if (result.step != STEP ||
-        result.sample_count != EXPECTED_SAMPLE_COUNT)
+    /** @brief Rejects analysis of a step excluded by the parser. */
+    void testStepSelectionValidation()
     {
-        throw std::runtime_error("Step or sample count incorrect.");
+        std::cout << "\n--- Test 3: Step selection validation ---\n";
+
+        rrm::LogData data = makeTestData();
+        data.sel_step = 2;
+        const rrm::MeasurementAnalyzer analyzer;
+
+        requireThrows<std::invalid_argument>(
+            [&] { (void)analyzer.analyzeMeasurements(data, TEST_STEP); },
+            "A step not loaded by the parser must be rejected."
+        );
+
+        std::cout << "PASSED: Unavailable selected step rejected.\n";
     }
 
-    // Verify time calculations.
-    if (result.start_time_ms != EXPECTED_START_TIME_MS ||
-        result.duration_ms != EXPECTED_DURATION_MS)
+    /** @brief Rejects data sets with fewer than two selected samples. */
+    void testInsufficientSamples()
     {
-        throw std::runtime_error("Time calculation incorrect.");
+        std::cout << "\n--- Test 4: Insufficient samples ---\n";
+
+        rrm::LogData data = makeTestData();
+        data.meas_samples = {{5, 1000, 10.0, 3.0}};
+        const rrm::MeasurementAnalyzer analyzer;
+
+        requireThrows<std::invalid_argument>(
+            [&] { (void)analyzer.analyzeMeasurements(data, TEST_STEP); },
+            "A single measurement must be rejected."
+        );
+
+        data.meas_samples.clear();
+        requireThrows<std::invalid_argument>(
+            [&] { (void)analyzer.analyzeMeasurements(data, TEST_STEP); },
+            "An empty data set must be rejected."
+        );
+
+        std::cout << "PASSED: Insufficient samples rejected.\n";
     }
 
-    // Verify radial force statistics.
-    checkEqualDouble(result.radial_force.mean, EXPECTED_RADIAL_MEAN);
-    checkEqualDouble(result.radial_force.min.value, EXPECTED_RADIAL_MIN);
-    checkEqualDouble(result.radial_force.max.value, EXPECTED_RADIAL_MAX);
-
-    // Verify torque statistics.
-    checkEqualDouble(result.torque.mean, EXPECTED_TORQUE_MEAN);
-    checkEqualDouble(result.torque.min.value, EXPECTED_TORQUE_MIN);
-    checkEqualDouble(result.torque.max.value, EXPECTED_TORQUE_MAX);
-
-    // Verify extrema timestamps.
-    if (
-        result.radial_force.min.time_ms != EXPECTED_RADIAL_MIN_TIME_MS ||
-        result.radial_force.max.time_ms != EXPECTED_RADIAL_MAX_TIME_MS ||
-        result.torque.min.time_ms != EXPECTED_TORQUE_MIN_TIME_MS ||
-        result.torque.max.time_ms != EXPECTED_TORQUE_MAX_TIME_MS
-    )
+    /** @brief Rejects negative timestamps and non-finite measurements. */
+    void testInvalidMeasurementValues()
     {
-        throw std::runtime_error("Extrema timestamps incorrect.");
+        std::cout << "\n--- Test 5: Invalid measurement values ---\n";
+
+        rrm::LogData data = makeTestData();
+        const rrm::MeasurementAnalyzer analyzer;
+
+        data.meas_samples[1].time_ms = -1;
+        requireThrows<std::invalid_argument>(
+            [&] { (void)analyzer.analyzeMeasurements(data, TEST_STEP); },
+            "Negative timestamps must be rejected."
+        );
+
+        data = makeTestData();
+        data.meas_samples[1].radial_force =
+            std::numeric_limits<double>::quiet_NaN();
+        requireThrows<std::invalid_argument>(
+            [&] { (void)analyzer.analyzeMeasurements(data, TEST_STEP); },
+            "NaN radial force must be rejected."
+        );
+
+        data = makeTestData();
+        data.meas_samples[1].torque =
+            std::numeric_limits<double>::infinity();
+        requireThrows<std::invalid_argument>(
+            [&] { (void)analyzer.analyzeMeasurements(data, TEST_STEP); },
+            "Infinite torque must be rejected."
+        );
+
+        std::cout << "PASSED: Invalid measurements rejected.\n";
     }
 
-    std::cout << "PASSED: All computed metrics are correct.\n";
-}
-
-
-// ------------------------------------------------------------
-// Test 2: Parser and analyzer integration
-// ------------------------------------------------------------
-
-/** 
- * @brief Tests the analyzer using a real RRM logfile which is loaded by LogParser. No default
- * value comparison is performed for the computed metrics.
- * @param file_path Path to the logfile.
- */
-void testIntegration(const std::string& file_path)
-{
-    std::cout << "\n--- Test 2: Parser + Analyzer ---\n";
-
-    // Define 
-    constexpr int STEP = 5;
-
-    // Load measurement step 5.
-    rrm::RrmLogParser parser;
-    parser.load(file_path, STEP);
-
-    const auto& data = parser.getData();
-
-    // Verify parser output.
-    if (data.parse_status != rrm::ParseStatus::Complete)
-        throw std::runtime_error("Log parsing was not complete.");
-
-    if (data.meas_samples.empty())
-        throw std::runtime_error("No measurements loaded.");
-
-    for (const auto& sample : data.meas_samples)
+    /** @brief Rejects unordered timestamps and a zero-duration step. */
+    void testTimeValidation()
     {
-        if (sample.step != STEP)
-            throw std::runtime_error("Incorrect step loaded.");
+        std::cout << "\n--- Test 6: Timestamp validation ---\n";
+
+        rrm::LogData data = makeTestData();
+        const rrm::MeasurementAnalyzer analyzer;
+
+        // The third selected sample must not precede the second one.
+        data.meas_samples[3].time_ms = 1500;
+        requireThrows<std::invalid_argument>(
+            [&] { (void)analyzer.analyzeMeasurements(data, TEST_STEP); },
+            "Out-of-order timestamps must be rejected."
+        );
+
+        // Equal timestamps are permitted, but total duration must be > 0.
+        data = makeTestData();
+        data.meas_samples[2].time_ms = 1000;
+        data.meas_samples[3].time_ms = 1000;
+        requireThrows<std::invalid_argument>(
+            [&] { (void)analyzer.analyzeMeasurements(data, TEST_STEP); },
+            "Zero measurement duration must be rejected."
+        );
+
+        std::cout << "PASSED: Invalid measurement times rejected.\n";
     }
 
-    // Compute metrics.
-    rrm::MeasurementAnalyzer analyzer;
-    const auto result = analyzer.analyzeMeasurements(data, STEP);
+    /** @brief Tests parsing a real log and analyzing its selected samples. */
+    void testIntegration(const std::string& file_path)
+    {
+        std::cout << "\n--- Test 7: Parser + analyzer integration ---\n";
 
-    // Verify consistency.
-    if (result.sample_count != data.meas_samples.size())
-        throw std::runtime_error("Sample count mismatch.");
+        rrm::RrmLogParser parser;
+        parser.load(file_path, TEST_STEP);
+        const auto& data = parser.getData();
 
-    if (result.duration_ms <= 0)
-        throw std::runtime_error("Invalid measurement duration.");
+        require(data.parse_status == rrm::ParseStatus::Complete,
+                "Real log parsing failed: " + data.parse_message);
+        require(data.meas_samples.size() >= 2,
+                "Real log contains too few samples for analysis.");
 
-    // Display results.
-    std::cout << "Samples: " << result.sample_count << '\n';
-    std::cout << "Duration: "
-              << result.duration_ms / 60000.0 << " min\n";
+        for (const auto& sample : data.meas_samples)
+        {
+            require(sample.step == TEST_STEP,
+                    "Parser returned a measurement from the wrong step.");
+        }
 
-    std::cout << "\nRadial force:\n"
-              << "Mean: " << result.radial_force.mean << '\n'
-              << "Min:  " << result.radial_force.min.value << '\n'
-              << "Max:  " << result.radial_force.max.value << '\n';
+        const rrm::MeasurementAnalyzer analyzer;
+        const auto result = analyzer.analyzeMeasurements(data, TEST_STEP);
 
-    std::cout << "\nTorque:\n"
-              << "Mean: " << result.torque.mean << '\n'
-              << "Min:  " << result.torque.min.value << '\n'
-              << "Max:  " << result.torque.max.value << '\n';
+        // Confirm consistency between parsed samples and analyzer output.
+        require(result.step == TEST_STEP, "Analyzed step is incorrect.");
+        require(result.sample_count == data.meas_samples.size(),
+                "Analyzer sample count differs from parser output.");
+        require(result.start_time_ms == data.meas_samples.front().time_ms,
+                "Analyzer start time differs from the first sample.");
+        require(result.duration_ms ==
+                    data.meas_samples.back().time_ms -
+                    data.meas_samples.front().time_ms,
+                "Analyzer duration differs from parsed timestamps.");
+        require(result.duration_ms > 0, "Duration must be positive.");
 
-    std::cout << "\nPASSED: Integration test completed.\n";
-}
+        // All summary values and extrema timestamps must be plausible.
+        const auto checkStats = [&](const rrm::QuantityStats& stats,
+                                    const std::string& name)
+        {
+            require(std::isfinite(stats.mean) &&
+                        std::isfinite(stats.min.value) &&
+                        std::isfinite(stats.max.value),
+                    name + " contains non-finite statistics.");
+            require(stats.min.value <= stats.mean &&
+                        stats.mean <= stats.max.value,
+                    name + " statistics are inconsistent.");
 
+            const auto end_time_ms =
+                result.start_time_ms + result.duration_ms;
+            require(stats.min.time_ms >= result.start_time_ms &&
+                        stats.min.time_ms <= end_time_ms &&
+                        stats.max.time_ms >= result.start_time_ms &&
+                        stats.max.time_ms <= end_time_ms,
+                    name + " extrema timestamps are outside the step.");
+        };
 
-// ------------------------------------------------------------
-// Main
-// ------------------------------------------------------------
+        checkStats(result.radial_force, "Radial force");
+        checkStats(result.torque, "Torque");
+
+        std::cout << "Samples: " << result.sample_count
+                  << "\nDuration: " << result.duration_ms / 60000.0 << " min\n"
+                  << "\nRadial force:\n"
+                  << "Mean: " << result.radial_force.mean << '\n'
+                  << "Min:  " << result.radial_force.min.value << '\n'
+                  << "Max:  " << result.radial_force.max.value << '\n'
+                  << "\nTorque:\n"
+                  << "Mean: " << result.torque.mean << '\n'
+                  << "Min:  " << result.torque.min.value << '\n'
+                  << "Max:  " << result.torque.max.value << '\n'
+                  << "\nPASSED: Integration test.\n";
+    }
+} // namespace
 
 int main(int argc, char* argv[])
 {
-    // Choose path of logfile
-    const std::string file_path = (argc > 1)
-        ? argv[1]
-        : DEFAULT_LOG_PATH;
+    const std::string file_path = argc > 1 ? argv[1] : DEFAULT_LOG_PATH;
 
     try
-    {   
-        // Test the measurement analyzer against expected results.
-        testMeasAnalyzer();
-
-        // Test meas analyzer with real data loaded by log parser.
+    {
+        testKnownStatistics();
+        testParseStatusValidation();
+        testStepSelectionValidation();
+        testInsufficientSamples();
+        testInvalidMeasurementValues();
+        testTimeValidation();
         testIntegration(file_path);
 
-        std::cout << "\nAll tests passed!\n";
+        std::cout << "\nAll analyzer tests passed!\n";
         return 0;
     }
-    catch (const std::exception& e)
+    catch (const std::exception& error)
     {
-        std::cerr << "\nTEST FAILED: " << e.what() << '\n';
+        std::cerr << "\nTEST FAILED: " << error.what() << '\n';
         return 1;
     }
 }

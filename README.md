@@ -1,5 +1,6 @@
 # RRM Measurement Analyzer
 
+
 ## 1. Project Overview
 
 The task was to develop a C++ application with a Qt graphical interface to load an RRM log file, analyze a selected measurement step, and display the results. The main focus is the analysis of step measurements.
@@ -11,6 +12,7 @@ We divided the solution into three components:
 3. **Qt Visualization:** Displays the calculated metrics and the measurements over time in two interactive charts. 
 
 Error handling is described in the "Validation and error handling" section.
+
 
 ## 2. Using the Application
 
@@ -40,8 +42,6 @@ Each chart shows the measured values over time. Dashed horizontal lines indicate
 The original timestamps from the log file are preserved. They are **not shifted to start at zero** for the selected step, because this was not specified in the task. Milliseconds are converted to minutes only for display.
 
 To inspect a smaller area, drag a rectangle across a chart to **zoom in**. Click **Reset zoom** to return to the full view.
-
-
 
 ### Validation and error handling
 
@@ -113,37 +113,47 @@ The application is divided into separate components:
 
 The parser also reads **metadata and summary information** from the log. The current GUI focuses on measurement statistics and time-series charts and does not display those other sections.
 
+
+**Both tests use data/202211302134.log by default. The file must be available at the expected path**. A different log file can be provided as a command-line argument.
+
+
 ## 5. Testing
 
-The project includes two test executable test: 
-- test_log_parser: Test the log parser
-- test_measurement_analyzer: Test
+The project contains two standalone test executables. Both run automated checks and report a failure if an expected result is not met.
 
-1. **Analyzer test:** Checks calculated metrics against expected results for predefined measurement samples.
-2. **Integration test:** Loads an RRM log file through the parser and analyzes the selected measurement step.
+1. **Log Parser Test (`test_log_parser`)**
+    - **Complete log and step filtering:** Uses a valid test log to verify metadata, summary, measurement rows, selected step 5, and loading all steps. Also checks that the parser can be reused and cleared.
+    - **Unavailable step:** Ensures the parser rejects a step that does not exist in a completely parsed log and clears its stored data.
+    - **Incomplete log:** Verifies that an unexpected end of file is reported as `Incomplete` and previously parsed measurements remain available.
+    - **Invalid measurement row:** Checks that an incorrect column count produces an `Error` while preserving earlier valid measurements.
+    - **Missing completion marker:** Verifies that a missing final `log stopped:` marker produces an `Incomplete` result without discarding parsed samples.
+    - **Custom delimiter:** Confirms that a log using `|` instead of `;` can be parsed correctly.
+    - **File and configuration errors:** Checks that a missing file and an empty delimiter are reported as errors.
+    - **Real-log integration:** Loads step 5 from an actual RRM log file and verifies successful parsing, step filtering, and consistent sample counts.
 
-After building the project, run the test executable from the project root:
+2. **Measurement Analyzer Test (`test_measurement_analyzer`)**
+    - **Known measurement statistics:** Uses predefined samples with known results to verify step filtering, sample count, start time, duration, means, minima, maxima, and extrema timestamps. Floating-point results are compared with a defined tolerance.
+    - **Parse status validation:** Confirms that incomplete or invalid parser results cannot be analyzed.
+    - **Step selection validation:** Ensures the analyzer rejects a step different from the one loaded by the parser.
+    - **Insufficient samples:** Verifies that zero or one sample is rejected.
+    - **Invalid measurement values:** Checks that negative timestamps, `NaN`, and infinite measurement values are rejected.
+    - **Timestamp validation:** Rejects measurements with decreasing timestamps or a total duration of zero.
+    - **Parser and analyzer integration:** Loads step 5 from an actual RRM log file and checks parsing status, sample count, start time, duration, finite statistics, and plausible extrema values and timestamps. Computed statistics are printed but are not compared with predefined reference values.
+
+The parser tests create temporary synthetic `.log` files for their individual test cases and remove them afterward. **Both executables also run an integration test using `data/202211302134.log` by default.** Run the commands from the project root so that the relative path resolves correctly. You can supply a different log file as the first command-line argument.
+
+Run both tests with:
 
 ```powershell
 .\build\test_log_parser.exe
 .\build\test_measurement_analyzer.exe
 ```
 
-**Both tests use data/202211302134.log by default. The file must be available at the expected path**. A different log file can be provided as a command-line argument.
+To use another log file, append its path to either command, for example:
 
-
-## 5. Testing
-1. **Log Parser Test (test_log_parser)**
-    - Loads an RRM log file for a selected measurement step or all steps.
-    - Checks whether the parser successfully loaded the data.
-    - Displays the metadata, the first 10 measurement samples, and the summary.
-    - Reports errors or incomplete parsing results. 
-
-2. **Measurement Analyzer Test (test_measurement_analyzer)**
-    - Analyzer unit test: Uses predefined measurement samples with known expected results. Verifies the step filtering, sample count, measurement duration, mean, minimum, maximum, and timestamps of the extrema. Numerical results are compared against expected values within a defined tolerance.
-
-    - Parser and analyzer integration test: Loads step 5 from a real RRM log file using the parser and passes the data to the analyzer. Checks that parsing completed successfully, only the requested step was loaded, the sample counts match, and the calculated duration is positive. The computed metrics are displayed but are not compared against predefined reference values.
-
+```powershell
+.\build\test_measurement_analyzer.exe .\data\another_measurement.log
+```
 
 ## 6. Future Work
 The current application analyzes RRM log files offline. In a production machine, the **PLC would remain responsible for machine control**, while a separate PC would handle data processing, analysis, and visualization. 
