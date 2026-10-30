@@ -85,3 +85,14 @@ qrc_*.cpp
 .DS_Store
 Thumbs.db
 desktop.ini
+
+
+# ==========================================
+# Ignore log files beside validation files for the tests
+# ==========================================
+# Ignore all log files
+*.log
+
+# Allow specific test log files
+!/data/202211302134.log
+!/data/invalid_log_file.log
