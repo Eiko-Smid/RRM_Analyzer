@@ -23,7 +23,7 @@ namespace rrm
         MeasurementAnalyzer() = default;
 
         /**
-         * @brief Analyzes measurements of a selected step.
+         * @brief Analyzes measurements of a selected step while checking for complete log data.
          *
          * @param data Parsed log data containing measurement samples.
          * @param step Measurement step to analyze. Default is 5.
@@ -38,7 +38,7 @@ namespace rrm
         /**
          * @brief Processes samples and computes the desired metrics which are min, max and mean
          * of the torque and radial force.
-         * @param data Parsed log data.
+         * @param data Parsed log data containing measurement samples.
          * @param step Step to process.
          * @return Computed measurement metrics.
          */
@@ -51,7 +51,7 @@ namespace rrm
          * @brief Updates the minimum and maximum of a quantity.
          *
          * @param stats Statistics structure to update.
-         * @param value Current measurement value.
+         * @param value Measurement step to analyze. Default is 5.
          * @param time_ms Timestamp of the current measurement.
          */
         static void updateExtrema(
