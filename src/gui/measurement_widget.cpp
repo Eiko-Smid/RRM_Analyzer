@@ -18,6 +18,7 @@
 #include <QColor>
 #include <QEvent>
 #include <QPalette>
+#include <QGroupBox>
 
 #include <algorithm>
 #include <cmath>
@@ -46,13 +47,19 @@ MeasurementWidget::MeasurementWidget(
     // ------------------------------------------------------------
 
     // A: Gap between labels and their values/units
-    constexpr int label_value_gap_px = 40;
+    constexpr int label_value_gap_px = 30;
 
-    // B: Gap between left and right statistics blocks
-    constexpr int block_gap_px = 180;
+    // B: Gap between Maximum and Mean boxes
+    constexpr int max_mean_gap_px = 30;
 
-    // Vertical distance between statistics rows
+    // C: Gap between Minimum and Maximum boxes
+    constexpr int min_max_gap_px = 40;
+
+    // D: Vertical distance between statistics rows
     constexpr int row_gap_px = 8;
+
+    // E: Horizontal offset of the statistics section
+    constexpr int stats_left_offset_px = 80;
 
     // Define main layout
     auto* main_layout = new QVBoxLayout(this);
@@ -69,64 +76,83 @@ MeasurementWidget::MeasurementWidget(
     max_time_label_ = new QLabel(DEFAULT_TIME_TEXT, this);
 
     // ------------------------------------------------------------
-    // Define LEFT STATISTICS BLOCK
+    // DEFINE MEAN STATISTICS GROUP
     // ------------------------------------------------------------
-    auto* left_stats = new QGridLayout();
+    auto* mean_group = new QGroupBox("Mean", this);
+    auto* mean_layout = new QGridLayout(mean_group);
 
-    left_stats->setHorizontalSpacing(label_value_gap_px);
-    left_stats->setVerticalSpacing(row_gap_px);
+    mean_layout->setHorizontalSpacing(label_value_gap_px);
 
-    // Mean
-    left_stats->addWidget(new QLabel("Mean:", this), 0, 0);
-    left_stats->addWidget(mean_value_label_, 0, 1);
+    // Mean value
+    mean_layout->addWidget(new QLabel("Value:", mean_group), 0, 0);
+    mean_layout->addWidget(mean_value_label_, 0, 1);
 
-    // Minimum
-    left_stats->addWidget(new QLabel("Minimum:", this), 1, 0);
-    left_stats->addWidget(min_value_label_, 1, 1);
+    // ------------------------------------------------------------
+    // DEFINE MINIMUM STATISTICS GROUP
+    // ------------------------------------------------------------
+    auto* min_group = new QGroupBox("Minimum", this);
+    auto* min_layout = new QGridLayout(min_group);
+
+    min_layout->setHorizontalSpacing(label_value_gap_px);
+    min_layout->setVerticalSpacing(row_gap_px);
+
+    // Minimum value
+    min_layout->addWidget(new QLabel("Value:", min_group), 0, 0);
+    min_layout->addWidget(min_value_label_, 0, 1);
 
     // Minimum time
-    left_stats->addWidget(new QLabel("Time:", this), 2, 0);
-    left_stats->addWidget(min_time_label_, 2, 1);
+    min_layout->addWidget(new QLabel("Time:", min_group), 1, 0);
+    min_layout->addWidget(min_time_label_, 1, 1);
+
 
     // ------------------------------------------------------------
-    // Define RIGHT STATISTICS BLOCK
+    // DEFINE MAXIMUM STATISTICS GROUP
     // ------------------------------------------------------------
-    auto* right_stats = new QGridLayout();
+    auto* max_group = new QGroupBox("Maximum", this);
+    auto* max_layout = new QGridLayout(max_group);
 
-    right_stats->setHorizontalSpacing(label_value_gap_px);
-    right_stats->setVerticalSpacing(row_gap_px);
+    max_layout->setHorizontalSpacing(label_value_gap_px);
+    max_layout->setVerticalSpacing(row_gap_px);
 
-    // Empty first row to align Maximum with Minimum
-    right_stats->addWidget(new QLabel(" ", this), 0, 0);
-
-    // Maximum
-    right_stats->addWidget(new QLabel("Maximum:", this), 1, 0);
-    right_stats->addWidget(max_value_label_, 1, 1);
+    // Maximum value
+    max_layout->addWidget(new QLabel("Value:", max_group), 0, 0);
+    max_layout->addWidget(max_value_label_, 0, 1);
 
     // Maximum time
-    right_stats->addWidget(new QLabel("Time:", this), 2, 0);
-    right_stats->addWidget(max_time_label_, 2, 1);
+    max_layout->addWidget(new QLabel("Time:", max_group), 1, 0);
+    max_layout->addWidget(max_time_label_, 1, 1);
+
 
     // ------------------------------------------------------------
-    // COMBINE STATISTICS BLOCKS
+    // COMBINE STATISTICS GROUPS
     // ------------------------------------------------------------
     auto* stats_layout = new QHBoxLayout();
 
     stats_layout->setSpacing(0);
 
-    // Left block
-    stats_layout->addLayout(left_stats);
+    // Horizontal offset of the entire statistics section
+    stats_layout->addSpacing(stats_left_offset_px);
 
-    // Fixed distance between both blocks
-    stats_layout->addSpacing(block_gap_px);
+    // Minimum group
+    stats_layout->addWidget(min_group, 0, Qt::AlignTop);
 
-    // Right block
-    stats_layout->addLayout(right_stats);
+    // Gap between Minimum and Maximum
+    stats_layout->addSpacing(min_max_gap_px);
 
-    // Remaining empty space AFTER both blocks
+    // Maximum group
+    stats_layout->addWidget(max_group, 0, Qt::AlignTop);
+
+    // Gap between Maximum and Mean
+    stats_layout->addSpacing(max_mean_gap_px);
+
+    // Mean group
+    stats_layout->addWidget(mean_group, 0, Qt::AlignTop);
+
+    // Keep all groups aligned to the left
     stats_layout->addStretch(1);
 
     main_layout->addLayout(stats_layout);
+
 
     // ------------------------------------------------------------
     // TIME-SERIES CHART
