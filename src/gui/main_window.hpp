@@ -19,37 +19,68 @@ namespace rrm
 class MainWindow : public QMainWindow
 {
 public:
+    /**
+     * @brief Creates the main window with file selection, step selection,
+     *        analysis controls, statistics, and measurement charts.
+     * @param parent Optional parent widget.
+     */
     explicit MainWindow(QWidget* parent = nullptr);
 
 private:
-    /**
-     * @brief Method that reads the log file and checks if it is empty -> status bar msg or not.
+     /**
+     * @brief Opens a file dialog to select a log file, displays its path, enables analysis,
+     * and resets previously displayed results.
      */
     void browseLogFile();
 
     /**
-     * @brief Method that reads the log file measurements and analyzes them. Reports to msg box if successful or not.
-     * Catches exception if something went wrong during log file read or analysis. 
+     * @brief Loads and analyzes the selected measurement step, then displays statistics
+     * and time-series charts. Reports success in the status bar and shows an error dialog 
+     * if loading or analysis fails.
      */
     void analyzeLogFile();
 
 
     /**
-     * @brief Displays the analysis results in the visu.
-     * @param Result of the analysis result that needs to be displayed.
+     * @brief Displays the measurement duration and the radial force and torque statistics
+     * for the completed analysis.
+     * @param analysis Computed measurement analysis results to display.
      */
     void displayAnalysis(const rrm::MeasurementAnalysis& analysis);
 
+    /**
+     * @brief Resets the displayed duration, statistics, and measurement charts.
+     */
     void resetAnalysisDisplay();
 
-    // Input controls
+
+    /**
+     * @brief Read-only text field displaying the selected log file path.
+     */
     QLineEdit* file_path_edit_{nullptr};
+
+    /**
+     * @brief Spin box for selecting the measurement step to analyze.
+     */
     QSpinBox* step_spinbox_{nullptr};
+
+    /**
+     * @brief Button used to start the log file analysis.
+     */
     QPushButton* analyze_button_{nullptr};
 
-    // Results
+    /**
+     * @brief Label displaying the duration of the selected measurement step.
+     */
     QLabel* duration_label_{nullptr};
 
+    /**
+     * @brief Widget displaying radial force statistics and the time-series chart.
+     */
     MeasurementWidget* radial_force_widget_{nullptr};
+
+    /**
+     * @brief Widget displaying torque statistics and the time-series chart.
+     */
     MeasurementWidget* torque_widget_{nullptr};
-};
+    };

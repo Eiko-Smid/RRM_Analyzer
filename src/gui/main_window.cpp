@@ -105,13 +105,9 @@ MainWindow::MainWindow(QWidget* parent)
         "Analyze",
         central_widget
     );
-
-    // Analysis will be implemented in the next step
+    
     analyze_button_->setEnabled(false);
 
-    // control_layout->addWidget(
-    //     new QLabel("Measurement step:", central_widget)
-    // );
     auto* step_label = new QLabel("Measurement step:", central_widget);
     step_label->setStyleSheet("font-weight: bold;");
     control_layout->addWidget(step_label);
