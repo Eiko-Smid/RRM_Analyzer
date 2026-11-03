@@ -6,10 +6,48 @@
 #include <cstddef>
 #include <unordered_map>
 #include <optional>
+#include <variant>
 
 
 namespace rrm
 {
+    // Define column spec
+    enum class ValueType
+    {
+        Int64,
+        Double,
+        String
+    };
+
+    struct ColumnSpec
+    {
+        std::string name;
+        ValueType type;
+    };
+
+
+    // Define variant -> storage for arbitrarily column values
+    using CellValue = std::variant<
+        std::int64_t,
+        double,
+        std::string
+    >;
+
+    // Define storage for one column
+    struct Column
+    {
+        ColumnSpec name;
+        std::size_t idx; 
+        std::vector<CellValue> values;
+    };
+
+    // Define storage all columns
+    struct MeasurementTable
+    {
+        std::vector<Column> columns;
+    };
+
+
     // Status of the complete log-file parsing operation.
     enum class ParseStatus
     {

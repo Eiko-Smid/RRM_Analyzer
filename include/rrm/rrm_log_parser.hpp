@@ -253,7 +253,24 @@ namespace rrm
             );
 
             /**
-             * @brief Loads the lof file of the given file path, for the given step or alternatively all steps.
+             * @brief Gets the value to convert, the expected type of the value and uses the correct method, to
+             * convert the value. The col_name and line are used for printing information if error occurs. 
+             * 
+             * @param value The value to actually convert.
+             * @param type The type the value should be converted to.
+             * @param col_name The column name of the value to print if an error raises.
+             * @param line_number The line number of the current line to print if an error raises.
+             * @return The converted value in the success case.
+             */
+            [[nodiscard]] CellValue convertValue(
+                const std::string& value,
+                ValueType type,
+                const std::string& col_name,
+                std::size_t line_number
+            );
+
+            /**
+             * @brief Loads the log file of the given file path, for the given step or alternatively all steps.
              * @param file_path The path of the log file to load.
              * @param step The step to load or alternatively "std::nullopt" to load all steps.
              * @param delimiter String used to separate fields in each line of the log file.

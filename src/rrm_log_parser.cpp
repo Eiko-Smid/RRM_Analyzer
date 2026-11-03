@@ -597,6 +597,43 @@ namespace rrm
         result.parse_message = error_message;
         finished = true;
     }
+
+    
+    CellValue convertValue(
+        const std::string& value,
+        ValueType type,
+        const std::string& col_name,
+        std::size_t line_number
+    )
+    {
+
+        switch (type)
+        {
+            case ValueType::Int64:
+                return string_helpers::stringToInt(
+                    value,
+                    col_name,
+                    line_number
+                );
+            
+            case ValueType::Double:
+                return string_helpers::stringToDouble(
+                    value,
+                    col_name,
+                    line_number
+                );
+
+            case ValueType::String:
+                return value;
+        }
+
+        // Raise error if no case occurs
+        throw std::logic_error(
+            "Unsupported column type for column " + col_name +
+            " in row " + std::to_string(line_number) + ".\nType is " + 
+            std::to_string(static_cast<int>(type))
+        );
+    }
     
 
     LogData RrmLogParser::parsFile(
@@ -607,16 +644,12 @@ namespace rrm
     {
         // init state
         state = ParseState::IDLE;
-
         // Represents current line number in file
         std::size_t line_number = 0;
-
         // Open file
         std::ifstream input(file_path);
-
         // Check if file has been opened
         const bool f_opened = input.is_open();
-
         // Store information if loading has been finished
         bool finished = false;
 
