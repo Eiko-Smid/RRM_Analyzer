@@ -92,22 +92,20 @@ namespace string_helpers
     }
 
 
-    std::size_t findString(
+    std::optional<std::size_t> findString(
         const std::vector<std::string>& fields,
         const std::string& str
     )
     {
         for (std::size_t i = 0; i < fields.size(); ++i)
         {
-            if (lowercaseTxt(fields[i]) == str)
+            if (lowercaseTxt(fields[i]) == lowercaseTxt(str))
             {
                 return i;
             }
         }
 
-        throw std::runtime_error(
-            "Required string" + str + " has not been found inside given fields"
-        );
+        return std::nullopt;
     }
 
 

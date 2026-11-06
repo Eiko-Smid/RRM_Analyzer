@@ -36,13 +36,13 @@ namespace rrm
     // Define storage for one column
     struct Column
     {
-        ColumnSpec name;
+        ColumnSpec spec;
         std::size_t idx; 
         std::vector<CellValue> values;
     };
 
     // Define storage all columns
-    struct MeasurementTable
+    struct dataTable
     {
         std::vector<Column> columns;
     };
@@ -84,7 +84,8 @@ namespace rrm
         std::vector<std::string> summary_notes;
 
         // Storage vector for relevant measurements
-        std::vector<MeasurementSample> meas_samples;
+        // std::vector<MeasurementSample> meas_samples;
+        dataTable data_table;
 
         // Stores total numbers of measurement table
         std::size_t n_meas_rows{0};

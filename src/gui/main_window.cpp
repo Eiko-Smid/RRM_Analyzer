@@ -1,4 +1,3 @@
-
 #include "main_window.hpp"
 #include "measurement_widget.hpp"
 
@@ -350,3 +349,4 @@ void MainWindow::resetAnalysisDisplay()
     radial_force_widget_->resetTimeSeries();
     torque_widget_->resetTimeSeries();
 }
+

@@ -25,14 +25,20 @@ namespace rrm
             */
             void load(
                 const std::string& file_path,
+                const std::vector<ColumnSpec>& column_specs,
                 std::optional<int> step = 5,
-                const std::string& delimiter = ";"
+                const std::string& delimiter = ";",
+                const std::string& table_header_indicator = "count"
             );
 
             /** @brief Displays n_rows of the loaded data.
              * @param n_rows The number of rows to display. Default is 10.
+             * @param decimal_places The number of decimals to print
             */
-            void display_data(std::size_t n_rows = 10) const;
+            void display_data(
+                std::size_t n_rows = 10,
+                std::optional<int> decimal_places = std::nullopt
+            ) const;
 
             /** @brief Returns a reference to the loaded data.
              * @return A reference to the loaded LogData.
@@ -81,20 +87,22 @@ namespace rrm
             };
 
             // Stores the column indices of the measurement table as well as the expected number of columns.
-            struct ColInfo
-            {
-                std::size_t time_idx{0};
-                std::size_t step_idx{0};
-                std::size_t radial_force_idx{0};
-                std::size_t torque_idx{0};
-
-                // The number of column names that have been found in the measurement table.  
-                std::size_t exp_n_columns{0};
-            };
+            // struct ColInfo
+            // {
+            //     std::size_t time_idx{0};
+            //     std::size_t step_idx{0};
+            //     std::size_t radial_force_idx{0};
+            //     std::size_t torque_idx{0};                
+            // };
+            
+            // Define var for table header indicator
+            std::string table_header_indicator;
 
             ParseState state{ParseState::IDLE};
             FileState file_state;
-            ColInfo col_info;
+            
+            // The number of column names that have been found in the measurement table.  
+            std::size_t exp_n_columns{0};
 
             // Indicates if measurement table has been found in log file.
             bool found_table{false};
@@ -180,6 +188,7 @@ namespace rrm
                 const std::string& file_path,
                 std::optional<int> step,
                 const std::string& delimiter,
+                const std::string& table_header_indicator,
                 bool f_opened
             );
 
@@ -192,8 +201,10 @@ namespace rrm
              */
             void processStateReadMeta(
                 std::istream& input,
+                const std::vector<ColumnSpec>& column_specs,
                 std::size_t& line_number,
-                const std::string& delimiter
+                const std::string& delimiter,
+                const std::string& table_header_indicator
             );
 
             /**
@@ -278,8 +289,10 @@ namespace rrm
              */
             [[nodiscard]] LogData parsFile(
                 const std::string& file_path,
+                const std::vector<ColumnSpec>& column_specs,
                 std::optional<int> step,
-                const std::string& delimiter
+                const std::string& delimiter,
+                const std::string& table_header_indicator
             );
     };
 } // namespace rrm

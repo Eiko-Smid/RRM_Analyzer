@@ -14,6 +14,7 @@
 #include <stdexcept>
 #include <utility>
 #include <vector>
+#include <variant>
 
 
 namespace rrm
@@ -99,12 +100,14 @@ namespace rrm
 
     void RrmLogParser::load(
         const std::string& file_path,
+        const std::vector<ColumnSpec>& column_specs,
         std::optional<int> step,
-        const std::string& delimiter
+        const std::string& delimiter,
+        const std::string& table_header_indicator
     )
     {
         // Load data.
-        log_data_ = parsFile(file_path, step, delimiter);
+        log_data_ = parsFile(file_path, column_specs, step, delimiter, table_header_indicator);
 
         // Reject a selected step that was not found 
         if (step && log_data_->parse_status == ParseStatus::Complete && !selected_step_seen)
@@ -118,26 +121,45 @@ namespace rrm
     }
 
 
-    void RrmLogParser::display_data(std::size_t n_rows) const
+    void RrmLogParser::display_data(
+        std::size_t n_rows,
+        std::optional<int> decimal_places
+    ) const
     {
+        // Check if decimal places parameter is valid
+        if (decimal_places && *decimal_places < 0)
+        {
+            throw std::invalid_argument(
+                "Number of decimal places must not be negative."
+            );
+        }
+
+        // Get the data
         const auto& data = getData();
 
-        std::cout
-        << "File: " << data.file_path
-        << "\nSelected step: " << (data.sel_step ? std::to_string(*data.sel_step) : "all")
-        << "\nTotal measurement rows: " << data.n_meas_rows
-        << "\nSelected samples: " << data.meas_samples.size()
-        << "\nSelected step finished: " << (data.selected_step_finished ? "yes" : "no")
-        << '\n';
+        // Get the number of selected measurement rows from table if columns exist
+        const std::size_t n_selected_meas_rows = data.data_table.columns.empty()
+            ? 0
+            : data.data_table.columns.front().values.size();
 
-        // Display parsing status, including a warning for incomplete files.
+        // Print general table information 
+        std::cout
+            << "File: " << data.file_path
+            << "\nSelected step: " << (data.sel_step ? std::to_string(*data.sel_step) : "all")
+            << "\nTotal measurement rows: " << data.n_meas_rows
+            << "\nSelected measurement rows: " << n_selected_meas_rows
+            << '\n';
+
+        // Display parsing status and message
         const char* status = "Incomplete";
+
         if (data.parse_status == ParseStatus::Complete)
             status = "Complete";
         else if (data.parse_status == ParseStatus::Error)
             status = "Error";
 
         std::cout << "Parsing status: " << status << '\n';
+
         if (!data.parse_message.empty())
             std::cout << "Parsing message: " << data.parse_message << '\n';
 
@@ -148,30 +170,100 @@ namespace rrm
             data.metadata_notes
         );
 
-        // Display selected measurement samples.
-        const auto count = std::min(
-            n_rows, data.meas_samples.size()
+        // Estimate actual row count to display
+        const std::size_t count = std::min(
+            n_rows, n_selected_meas_rows
         );
 
-        std::cout
-            << "\nMeasurement samples (first "
-            << count << "):\n"
-            << std::setw(10) << "step"
-            << std::setw(14) << "time_ms"
-            << std::setw(18) << "radial_force"
-            << std::setw(18) << "torque"
-            << '\n';
+        const auto& columns = data.data_table.columns;
 
+        // Helper function to convert a CellValue into a printable string. Apply the specified decimal precision only
+        // to floating-point values. If no precision is specified, use the precision for doubles.
+        const auto cellToString = [decimal_places](const CellValue& cell) -> std::string
+        {
+            std::ostringstream stream;
+
+            // Configure stream precision of values
+            if (decimal_places)
+            {
+                stream << std::fixed
+                    << std::setprecision(*decimal_places);
+            }
+            else
+            {
+                stream << std::defaultfloat
+                    << std::setprecision(
+                        std::numeric_limits<double>::max_digits10
+                    );
+            }
+
+            // Define the visitor function that put the value into a stream
+            const auto visitor = [&stream](const auto& value)
+            {
+                stream << value;
+            };
+
+            // Convert the cell value to it's stored type and uses lambda to output the value as a stream
+            // with given precision
+            std::visit(visitor, cell);
+
+            return stream.str();
+        };
+
+        // Estimate the column width for each column to be printed based on it's max size.
+        // (either its the header or the value with most digits)
+        std::vector<std::size_t> col_widths;
+
+        // Reserve memory to store the column width values of each column.
+        col_widths.reserve(columns.size());
+
+        for (const auto& col : columns)
+        {
+            // Get header width
+            std::size_t width = col.spec.name.size();
+
+            // Check the width of every value to be printed
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                // Find the max value -> width to be used
+                width = std::max(
+                    width,
+                    cellToString(col.values[i]).size()
+                );
+            }
+
+            // Add two spaces between columns
+            col_widths.push_back(width + 2);
+        }
+
+        // Display number of measurement samples
+        std::cout << "\nMeasurement samples (first "
+                << count << "):\n";
+
+        // Print column names (header)
+        for (std::size_t j = 0; j < columns.size(); ++j)
+        {
+            std::cout
+                << std::left
+                << std::setw(static_cast<int>(col_widths[j]))
+                << columns[j].spec.name;
+        }
+
+        std::cout << '\n';
+
+        // Print rows
         for (std::size_t i = 0; i < count; ++i)
         {
-            const auto& sample = data.meas_samples[i];
+            for (std::size_t j = 0; j < columns.size(); ++j)
+            {
+                // Format and print the value using the calculated column width
+                std::cout
+                    << std::left
+                    << std::setw(static_cast<int>(col_widths[j]))
+                    << cellToString(columns[j].values[i]);
+            }
 
-            std::cout
-                << std::setw(10) << sample.step
-                << std::setw(14) << sample.time_ms
-                << std::setw(18) << sample.radial_force
-                << std::setw(18) << sample.torque
-                << '\n';
+            std::cout << '\n';
         }
 
         // Display summary.
@@ -180,7 +272,6 @@ namespace rrm
             data.summary,
             data.summary_notes
         );
-
     }
 
     const LogData& RrmLogParser::getData() const
@@ -336,11 +427,12 @@ namespace rrm
         const std::string& file_path,
         std::optional<int> step,
         const std::string& delimiter,
+        const std::string& table_header_indicator,
         bool f_opened
     )
     {
         // Reset 
-        col_info = {};
+        exp_n_columns={};
         file_state = {};
         found_table = false;
 
@@ -362,7 +454,12 @@ namespace rrm
         if (delimiter.empty())
         {
             parsing_error = true;
-            error_message = "Delimiter must not be empty";
+            error_message = "Delimiter must not be empty!";
+        }
+        else if (table_header_indicator.empty())
+        {
+            parsing_error = true;
+            error_message = "Table header indicator must no be empty!";
         }
         else if (!f_opened)
         {
@@ -373,8 +470,10 @@ namespace rrm
 
     void RrmLogParser::processStateReadMeta(
         std::istream& input,
+        const std::vector<ColumnSpec>& column_specs,
         std::size_t& line_number,
-        const std::string& delimiter
+        const std::string& delimiter,
+        const std::string& table_header_indicator
     )
     {   
         // Define storage for rows.
@@ -392,15 +491,49 @@ namespace rrm
                 return;
             }
 
+            // Read desired columns headers.
             // Detect first line of measurement table inside log file.
-            if (string_helpers::lowercaseTxt(fields.front()) == "count")
+            if (string_helpers::lowercaseTxt(fields.front()) == table_header_indicator)
             {
-                // Init column information
-                col_info.time_idx = string_helpers::findString(fields, "time");
-                col_info.step_idx = string_helpers::findString(fields, "step");
-                col_info.radial_force_idx = string_helpers::findString(fields, "radial load");
-                col_info.torque_idx = string_helpers::findString(fields, "torque");
-                col_info.exp_n_columns = fields.size();
+                // Add step column if not already existing
+                std::vector<ColumnSpec> extd_column_specs = column_specs;
+                const bool step_exists = std::any_of(
+                    column_specs.begin(),
+                    column_specs.end(),
+                    [](const ColumnSpec& spec)
+                    {
+                        return spec.name == "step";
+                    }
+                );
+
+                if (!step_exists)
+                {
+                    extd_column_specs.push_back({"step", ValueType::Int64});
+                }
+                
+                // Init column information.
+                for (const auto& column_spec : extd_column_specs)
+                {
+                    // Init column 
+                    Column col = {};
+                    // Check if column exists
+                    const auto idx = string_helpers::findString(fields, column_spec.name);
+                    if (!idx)
+                    {
+                        throw std::runtime_error(
+                            "Required column" + column_spec.name + " has not been found inside given fields"
+                        );
+                    }
+
+                    col.idx = *idx;
+                    col.spec = column_spec;
+
+                    // Add new column to data table
+                    result.data_table.columns.push_back(col);
+                }
+
+                // Store current number of columns -> expected number for reading the actual data.
+                exp_n_columns = fields.size();
                 found_table = true;
             }
             else
@@ -414,7 +547,7 @@ namespace rrm
         }
         catch (const std::exception& e)
         {
-            // // Store the parsing error while preserving previously loaded metadata.
+            // Store error info
             parsing_error = true;
             error_message = e.what();
         }
@@ -446,86 +579,89 @@ namespace rrm
             if (string_helpers::isEmptyField(fields))
             {
                 // Indicate separator, separating meas section from summary has been found.
-                // -> Meas section readed successful
+                // -> Meas section read successful
                 meas_separator_found = true;
-
-                if (step && selected_step_seen)
-                    result.selected_step_finished = true;
                 return;
             }
-            
-            const std::size_t required_width = std::max({
-                col_info.time_idx,
-                col_info.step_idx,
-                col_info.radial_force_idx,
-                col_info.torque_idx
-            }) + 1;
-
-            // Validate that the current number of columns equals expected number of columns.
-            const bool valid_width = fields.size() == col_info.exp_n_columns; 
-
-            if (fields.size() < required_width || !valid_width)
+                    
+            // Check if columns is missing 
+            if (fields.size() != exp_n_columns)
             {
                 throw std::runtime_error(
                     "Invalid measurement column count at line " +
                     std::to_string(line_number) +
-                    ": expected " + std::to_string(col_info.exp_n_columns) +
-                    " (or one fewer trailing field), got " +
-                    std::to_string(fields.size())
+                    ": expected " + std::to_string(exp_n_columns) +
+                    ", got " + std::to_string(fields.size())
                 );
             }
 
             // Count measurement rows.
             ++result.n_meas_rows;
 
-            // Check if measurements belong to step.
-            const auto row_step = string_helpers::stringToInt(
-                fields[col_info.step_idx],
+            // Read the step column value
+            // Get step column
+            const auto step_column = std::find_if(
+                result.data_table.columns.begin(),
+                result.data_table.columns.end(),
+                [](const Column& col)
+                {
+                    return col.spec.name == "step";
+                }
+            );
+
+            if (step_column == result.data_table.columns.end())
+            {
+                throw std::runtime_error("Step column not found!");
+            }
+
+            // Get idx of step column
+            const std::size_t step_idx = step_column->idx;
+
+            // Read step col value
+            const auto step_number = string_helpers::stringToInt(
+                fields[step_idx],
                 "step",
                 line_number
             );
 
-            // Record if an earlier step was seen after the selected one.
-            if (step && selected_step_seen && row_step != *step)
-                result.selected_step_finished = true;
-
-            // Read in data.
-            if (!step || row_step == *step)
+            // Read every row when no step is selected. Otherwise, only read rows
+            // belonging to the selected step.
+            if (!step || step_number == *step)
             {
+                // Record that the selected step was found.
                 if (step)
-                {
                     selected_step_seen = true;
-                    result.selected_step_finished = false;
+
+                // Convert all requested values first -> For safety if convert fails we dont end up with columns of 
+                // different size
+                std::vector<CellValue> converted_row;
+                
+                // Convert the values and store in volatile memory 
+                for (const auto& col : result.data_table.columns)
+                {
+                    converted_row.push_back(
+                        convertValue(
+                            fields[col.idx],
+                            col.spec.type,
+                            col.spec.name,
+                            line_number
+                        )
+                    );
                 }
 
-                MeasurementSample sample;
-                sample.step = row_step;
-
-                sample.time_ms = string_helpers::stringToInt(
-                    fields[col_info.time_idx],
-                    "time",
-                    line_number
-                );
-
-                sample.radial_force = string_helpers::stringToDouble(
-                    fields[col_info.radial_force_idx],
-                    "radial load",
-                    line_number
-                );
-
-                sample.torque = string_helpers::stringToDouble(
-                    fields[col_info.torque_idx],
-                    "torque",
-                    line_number
-                );
-
-                // Update result
-                result.meas_samples.push_back(sample);
+                // Store the converted values
+                for (std::size_t i = 0; i < converted_row.size(); ++i)
+                {
+                    result.data_table.columns[i].values.push_back(
+                        std::move(converted_row[i])
+                    );
+                }
             }
+
         }
         catch (const std::exception& e)
         {
-            // Preserve already loaded samples on malformed lines.
+            // Store error info
             parsing_error = true;
             error_message = e.what();
         }
@@ -543,7 +679,7 @@ namespace rrm
 
         try
         {
-            // // Try to read next line.
+            // Try to read next line.
             if (!readNextLine(input, line_number, delimiter, fields))
             {
                 if (file_state.read_err)
@@ -562,6 +698,7 @@ namespace rrm
             if (first_field.find("log stopped:") == 0)
                 log_stopped_found = true;
 
+            // Store summary section in key-value pairs
             storeKeyValue(
                 fields,
                 result.summary,
@@ -570,6 +707,7 @@ namespace rrm
         }
         catch (const std::exception& e)
         {
+            // Store error info
             parsing_error = true;
             error_message = e.what();
         }
@@ -599,7 +737,7 @@ namespace rrm
     }
 
     
-    CellValue convertValue(
+    CellValue RrmLogParser::convertValue(
         const std::string& value,
         ValueType type,
         const std::string& col_name,
@@ -638,8 +776,10 @@ namespace rrm
 
     LogData RrmLogParser::parsFile(
         const std::string& file_path,
+        const std::vector<ColumnSpec>& column_specs,
         std::optional<int> step,
-        const std::string& delimiter
+        const std::string& delimiter,
+        const std::string& table_header_indicator
     )
     {
         // init state
@@ -660,7 +800,7 @@ namespace rrm
             {
                 case ParseState::IDLE:
                 {
-                    processStateIdle(file_path, step, delimiter, f_opened);
+                    processStateIdle(file_path, step, delimiter, table_header_indicator, f_opened);
                     transIdleToErr(f_opened);
                     transIdleToReadMeta(f_opened);
                     break;
@@ -668,7 +808,7 @@ namespace rrm
 
                 case ParseState::READ_METADATA:
                 {
-                    processStateReadMeta(input, line_number, delimiter);
+                    processStateReadMeta(input, column_specs, line_number, delimiter, table_header_indicator);
                     transReadMetaToErr();
                     transReadMetaToReadMeas();
                     break;
@@ -704,7 +844,7 @@ namespace rrm
             }
         }
 
-        return result;
+        return std::move(result);
 
     }
     

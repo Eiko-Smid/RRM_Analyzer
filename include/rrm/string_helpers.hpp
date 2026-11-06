@@ -9,6 +9,7 @@
 #include <limits>
 #include <stdexcept>
 #include <cmath>
+#include <optional>
 
 
 namespace string_helpers
@@ -47,11 +48,11 @@ namespace string_helpers
 
 
     /** @brief Searches for the given string inside the filed vector. Returns the position of the string if found,
-     * else it throws an error. 
+     * else nullopt.
      * @param fields A vector containing the strings
      * @param str The string to search for in the vector
      */
-    std::size_t findString(
+    std::optional<std::size_t> findString(
         const std::vector<std::string>& fields,
         const std::string& str
     );
