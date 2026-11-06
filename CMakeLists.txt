@@ -20,6 +20,7 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Charts)
 add_library(rrm_core
     src/rrm_log_parser.cpp
     src/string_helpers.cpp
+    src/measurement_data_mapper.cpp
     src/measurement_analyzer.cpp
 )
 

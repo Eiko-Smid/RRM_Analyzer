@@ -20,8 +20,10 @@ namespace rrm
             /** @brief Loads the logfile from the given path into memory.
              * Selects only the rows that match current step value. 
              * @param file_path The path of the log file to load.
+             * @param column_specs The measurement columns and value types to load.
              * @param step The step to load or alternatively "std::nullopt" to load all steps.
              * @param delimiter String used to separate fields in each line of the log file.
+             * @param table_header_indicator Exact first field identifying the measurement header.
             */
             void load(
                 const std::string& file_path,
@@ -41,9 +43,9 @@ namespace rrm
             ) const;
 
             /** @brief Returns a reference to the loaded data.
-             * @return A reference to the loaded LogData.
+             * @return A reference to the loaded ColumnLogData.
              */
-            [[nodiscard]] const LogData& getData() const;
+            [[nodiscard]] const ColumnLogData& getData() const;
 
             /** @brief Checks if the logfile has been loaded.
              * @return true if the logfile has been loaded, false otherwise.
@@ -95,9 +97,6 @@ namespace rrm
             //     std::size_t torque_idx{0};                
             // };
             
-            // Define var for table header indicator
-            std::string table_header_indicator;
-
             ParseState state{ParseState::IDLE};
             FileState file_state;
             
@@ -108,14 +107,14 @@ namespace rrm
             bool found_table{false};
 
             // Stores data while parsing the log file.
-            LogData result;
+            ColumnLogData result;
 
             // Error handling flags and messages.
             bool parsing_error{false};
             std::string error_message;
 
             // Storage struct for the loaded log data
-            std::optional<LogData> log_data_;
+            std::optional<ColumnLogData> log_data_;
 
             // Flags set only by state processing; transitions only inspect them.
             bool meas_separator_found{false};
@@ -283,11 +282,13 @@ namespace rrm
             /**
              * @brief Loads the log file of the given file path, for the given step or alternatively all steps.
              * @param file_path The path of the log file to load.
+             * @param column_specs The measurement columns and value types to load.
              * @param step The step to load or alternatively "std::nullopt" to load all steps.
              * @param delimiter String used to separate fields in each line of the log file.
-             * @return Returns the LogData struct containing the content of the log file.
+             * @param table_header_indicator Exact first field identifying the measurement header.
+             * @return Returns the ColumnLogData struct containing the content of the log file.
              */
-            [[nodiscard]] LogData parsFile(
+            [[nodiscard]] ColumnLogData parsFile(
                 const std::string& file_path,
                 const std::vector<ColumnSpec>& column_specs,
                 std::optional<int> step,

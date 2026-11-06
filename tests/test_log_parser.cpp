@@ -1,5 +1,7 @@
+#include "rrm/measurement_data_mapper.hpp"
 #include "rrm/rrm_log_parser.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <exception>
@@ -11,13 +13,23 @@
 #include <string>
 #include <system_error>
 #include <utility>
+#include <variant>
+#include <vector>
 
 namespace
 {
     namespace fs = std::filesystem;
 
     constexpr char DEFAULT_LOG_PATH[] = "data/202211302134.log";
+    constexpr char FIXTURE_HEADER[] = "Count";
+    constexpr char REAL_LOG_HEADER[] = "count";
     constexpr int TEST_STEP = 5;
+
+    const std::vector<rrm::ColumnSpec> MEASUREMENT_COLUMNS = {
+        {"time", rrm::ValueType::Int64},
+        {"radial load", rrm::ValueType::Double},
+        {"torque", rrm::ValueType::Double}
+    };
 
     /** @brief Fails the test when a condition is not satisfied. */
     void require(bool condition, const std::string& message)
@@ -103,10 +115,19 @@ namespace
         require(!parser.hasLoaded(), "A new parser must be empty.");
 
         // Load only step 5 and verify the resulting measurements.
-        parser.load(file_path.string(), TEST_STEP);
+        parser.load(
+            file_path.string(),
+            MEASUREMENT_COLUMNS,
+            TEST_STEP,
+            ";",
+            FIXTURE_HEADER
+        );
         require(parser.hasLoaded(), "Parser should contain loaded data.");
 
-        const auto& selected = parser.getData();
+        const auto& selected_columns = parser.getData();
+        const auto selected = rrm::MeasurementDataMapper::toLegacyData(
+            selected_columns
+        );
         require(selected.parse_status == rrm::ParseStatus::Complete,
                 "Valid log must be complete.");
         require(selected.sel_step && *selected.sel_step == TEST_STEP,
@@ -128,9 +149,26 @@ namespace
         require(selected.summary.at("log stopped:") == "yes",
                 "Summary was not loaded correctly.");
 
+        require(selected_columns.data_table.columns.size() == 4,
+                "Generic parser returned the wrong number of columns.");
+        require(selected_columns.data_table.columns[0].spec.name == "time" &&
+                    selected_columns.data_table.columns[0].values.size() == 2 &&
+                    std::get<std::int64_t>(
+                        selected_columns.data_table.columns[0].values[0]
+                    ) == 2000,
+                "Generic column storage contains incorrect time values.");
+
         // Reuse the parser: std::nullopt must load all measurement steps.
-        parser.load(file_path.string(), std::nullopt);
-        const auto& all_steps = parser.getData();
+        parser.load(
+            file_path.string(),
+            MEASUREMENT_COLUMNS,
+            std::nullopt,
+            ";",
+            FIXTURE_HEADER
+        );
+        const auto all_steps = rrm::MeasurementDataMapper::toLegacyData(
+            parser.getData()
+        );
         require(all_steps.parse_status == rrm::ParseStatus::Complete,
                 "All-step parsing failed.");
         require(!all_steps.sel_step,
@@ -160,7 +198,16 @@ namespace
 
         rrm::RrmLogParser parser;
         requireThrows<std::runtime_error>(
-            [&] { parser.load(file_path.string(), 99); },
+            [&]
+            {
+                parser.load(
+                    file_path.string(),
+                    MEASUREMENT_COLUMNS,
+                    99,
+                    ";",
+                    FIXTURE_HEADER
+                );
+            },
             "An unavailable measurement step must be rejected."
         );
         require(!parser.hasLoaded(),
@@ -175,8 +222,16 @@ namespace
         std::cout << "\n--- Test 3: Incomplete log ---\n";
 
         rrm::RrmLogParser parser;
-        parser.load(file_path.string(), TEST_STEP);
-        const auto& data = parser.getData();
+        parser.load(
+            file_path.string(),
+            MEASUREMENT_COLUMNS,
+            TEST_STEP,
+            ";",
+            FIXTURE_HEADER
+        );
+        const auto data = rrm::MeasurementDataMapper::toLegacyData(
+            parser.getData()
+        );
 
         require(data.parse_status == rrm::ParseStatus::Incomplete,
                 "Unexpected EOF must produce Incomplete status.");
@@ -196,8 +251,16 @@ namespace
         std::cout << "\n--- Test 4: Invalid measurement row ---\n";
 
         rrm::RrmLogParser parser;
-        parser.load(file_path.string(), TEST_STEP);
-        const auto& data = parser.getData();
+        parser.load(
+            file_path.string(),
+            MEASUREMENT_COLUMNS,
+            TEST_STEP,
+            ";",
+            FIXTURE_HEADER
+        );
+        const auto data = rrm::MeasurementDataMapper::toLegacyData(
+            parser.getData()
+        );
 
         require(data.parse_status == rrm::ParseStatus::Error,
                 "Malformed measurement must produce Error status.");
@@ -216,8 +279,16 @@ namespace
         std::cout << "\n--- Test 5: Missing completion marker ---\n";
 
         rrm::RrmLogParser parser;
-        parser.load(file_path.string(), TEST_STEP);
-        const auto& data = parser.getData();
+        parser.load(
+            file_path.string(),
+            MEASUREMENT_COLUMNS,
+            TEST_STEP,
+            ";",
+            FIXTURE_HEADER
+        );
+        const auto data = rrm::MeasurementDataMapper::toLegacyData(
+            parser.getData()
+        );
 
         require(data.parse_status == rrm::ParseStatus::Incomplete,
                 "Missing completion marker must produce Incomplete status.");
@@ -235,8 +306,16 @@ namespace
         std::cout << "\n--- Test 6: Custom delimiter ---\n";
 
         rrm::RrmLogParser parser;
-        parser.load(file_path.string(), TEST_STEP, "|");
-        const auto& data = parser.getData();
+        parser.load(
+            file_path.string(),
+            MEASUREMENT_COLUMNS,
+            TEST_STEP,
+            "|",
+            FIXTURE_HEADER
+        );
+        const auto data = rrm::MeasurementDataMapper::toLegacyData(
+            parser.getData()
+        );
 
         require(data.parse_status == rrm::ParseStatus::Complete &&
                     data.meas_samples.size() == 2,
@@ -254,12 +333,30 @@ namespace
         std::cout << "\n--- Test 7: File and configuration errors ---\n";
 
         rrm::RrmLogParser parser;
-        parser.load(missing_log.string(), TEST_STEP);
+        parser.load(
+            missing_log.string(),
+            MEASUREMENT_COLUMNS,
+            TEST_STEP,
+            ";",
+            FIXTURE_HEADER
+        );
         require(parser.hasLoaded() &&
                     parser.getData().parse_status == rrm::ParseStatus::Error,
                 "Missing file must produce Error status.");
+        const auto missing_data = rrm::MeasurementDataMapper::toLegacyData(
+            parser.getData()
+        );
+        require(missing_data.parse_status == rrm::ParseStatus::Error &&
+                    missing_data.meas_samples.empty(),
+                "Mapper must preserve errors produced before the header.");
 
-        parser.load(valid_log.string(), TEST_STEP, "");
+        parser.load(
+            valid_log.string(),
+            MEASUREMENT_COLUMNS,
+            TEST_STEP,
+            "",
+            FIXTURE_HEADER
+        );
         require(parser.getData().parse_status == rrm::ParseStatus::Error,
                 "Empty delimiter must produce Error status.");
         require(parser.getData().parse_message.find("Delimiter") !=
@@ -275,8 +372,16 @@ namespace
         std::cout << "\n--- Test 8: Real-log integration ---\n";
 
         rrm::RrmLogParser parser;
-        parser.load(file_path, TEST_STEP);
-        const auto& data = parser.getData();
+        parser.load(
+            file_path,
+            MEASUREMENT_COLUMNS,
+            TEST_STEP,
+            ";",
+            REAL_LOG_HEADER
+        );
+        const auto data = rrm::MeasurementDataMapper::toLegacyData(
+            parser.getData()
+        );
 
         require(data.parse_status == rrm::ParseStatus::Complete,
                 "Real log was not parsed completely: " + data.parse_message);

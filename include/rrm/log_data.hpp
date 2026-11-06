@@ -65,6 +65,39 @@ namespace rrm
         double torque{0.0};
     };
 
+    struct ColumnLogData
+    {
+        // Stores filepath
+        std::string file_path;
+        // Defines which data rows to load (sort by step column)
+        // std::nullopt means that all measurement steps will be loaded.
+        std::optional<int> sel_step{5};
+
+        // Define storage for other log file sections
+
+        // Storage for metadata
+        std::unordered_map<std::string, std::string> metadata;
+        // Storage for summary
+        std::unordered_map<std::string, std::string> summary;
+
+        std::vector<std::string> metadata_notes;
+        std::vector<std::string> summary_notes;
+
+        // Column-oriented storage for requested measurements.
+        dataTable data_table;
+
+        // Stores total numbers of measurement table
+        std::size_t n_meas_rows{0};
+
+        // File completion and diagnostic information.
+        ParseStatus parse_status{ParseStatus::Incomplete};
+        std::string parse_message;
+
+        // Indicates whether a later step or the table end was observed
+        // after the requested step. This is not proof of data integrity.
+        bool selected_step_finished{false};
+    };
+
     struct LogData
     {
         // Stores filepath
@@ -83,9 +116,8 @@ namespace rrm
         std::vector<std::string> metadata_notes;
         std::vector<std::string> summary_notes;
 
-        // Storage vector for relevant measurements
-        // std::vector<MeasurementSample> meas_samples;
-        dataTable data_table;
+        // Legacy measurement storage used by MeasurementAnalyzer.
+        std::vector<MeasurementSample> meas_samples;
 
         // Stores total numbers of measurement table
         std::size_t n_meas_rows{0};

@@ -99,7 +99,7 @@ namespace string_helpers
     {
         for (std::size_t i = 0; i < fields.size(); ++i)
         {
-            if (lowercaseTxt(fields[i]) == lowercaseTxt(str))
+            if (fields[i] == str)
             {
                 return i;
             }

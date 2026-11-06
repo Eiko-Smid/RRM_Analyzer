@@ -1,4 +1,5 @@
 #include "rrm/measurement_analyzer.hpp"
+#include "rrm/measurement_data_mapper.hpp"
 #include "rrm/rrm_log_parser.hpp"
 
 #include <cmath>
@@ -11,6 +12,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace
 {
@@ -245,8 +247,15 @@ namespace
         std::cout << "\n--- Test 7: Parser + analyzer integration ---\n";
 
         rrm::RrmLogParser parser;
-        parser.load(file_path, TEST_STEP);
-        const auto& data = parser.getData();
+        const std::vector<rrm::ColumnSpec> column_specs = {
+            {"time", rrm::ValueType::Int64},
+            {"radial load", rrm::ValueType::Double},
+            {"torque", rrm::ValueType::Double}
+        };
+        parser.load(file_path, column_specs, TEST_STEP, ";", "count");
+        const auto data = rrm::MeasurementDataMapper::toLegacyData(
+            parser.getData()
+        );
 
         require(data.parse_status == rrm::ParseStatus::Complete,
                 "Real log parsing failed: " + data.parse_message);

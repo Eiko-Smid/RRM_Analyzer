@@ -2,6 +2,7 @@
 #include "measurement_widget.hpp"
 
 #include "rrm/rrm_log_parser.hpp"
+#include "rrm/measurement_data_mapper.hpp"
 #include "rrm/measurement_analyzer.hpp"
 
 #include <QFileDialog>
@@ -19,6 +20,8 @@
 #include <QStatusBar>
 
 #include <exception>
+#include <string>
+#include <vector>
 
 
 // -----------------------------------------------------------------------------------
@@ -248,12 +251,32 @@ void MainWindow::analyzeLogFile()
         rrm::RrmLogParser parser;
         const rrm::MeasurementAnalyzer analyzer;
 
-        // Read data.
-        parser.load(file_path, step);
+        // Define required columns for measurement analysis.
+        const std::vector<rrm::ColumnSpec> column_specs = {
+            {"time", rrm::ValueType::Int64},
+            {"radial load", rrm::ValueType::Double},
+            {"torque", rrm::ValueType::Double}
+        };
+        const std::string header_indicator = "count";
 
-        // Analyze loaded data
+        // Parse the logfile using generic column-oriented storage.
+        parser.load(
+            file_path,
+            column_specs,
+            step,
+            ";",
+            header_indicator
+        );
+
+        // Convert the generic data into the original LogData.
+        const rrm::LogData legacy_data =
+            rrm::MeasurementDataMapper::toLegacyData(
+                parser.getData()
+            );
+
+        // Analyze loaded data.
         const rrm::MeasurementAnalysis analysis = analyzer.analyzeMeasurements(
-            parser.getData(),
+            legacy_data,
             step
         );
 
@@ -263,7 +286,7 @@ void MainWindow::analyzeLogFile()
         // --------------------------------------------------
         // Prepare time-series data for both measurement charts
         // --------------------------------------------------
-        const auto& samples = parser.getData().meas_samples;
+        const auto& samples = legacy_data.meas_samples;
 
         QList<QPointF> radial_force_points;
         QList<QPointF> torque_points;

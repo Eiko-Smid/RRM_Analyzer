@@ -274,7 +274,7 @@ namespace rrm
         );
     }
 
-    const LogData& RrmLogParser::getData() const
+    const ColumnLogData& RrmLogParser::getData() const
     {
         // Returns reference to log data if existing, throws error else.
         if (!log_data_)
@@ -493,7 +493,7 @@ namespace rrm
 
             // Read desired columns headers.
             // Detect first line of measurement table inside log file.
-            if (string_helpers::lowercaseTxt(fields.front()) == table_header_indicator)
+            if (fields.front() == table_header_indicator)
             {
                 // Add step column if not already existing
                 std::vector<ColumnSpec> extd_column_specs = column_specs;
@@ -581,6 +581,10 @@ namespace rrm
                 // Indicate separator, separating meas section from summary has been found.
                 // -> Meas section read successful
                 meas_separator_found = true;
+
+                if (step && selected_step_seen)
+                    result.selected_step_finished = true;
+
                 return;
             }
                     
@@ -694,8 +698,7 @@ namespace rrm
                 return;
             
             // Check if log stopped text has been found -> end reached.
-            const std::string first_field = string_helpers::lowercaseTxt(fields.front());
-            if (first_field.find("log stopped:") == 0)
+            if (fields.front().find("log stopped:") == 0)
                 log_stopped_found = true;
 
             // Store summary section in key-value pairs
@@ -774,7 +777,7 @@ namespace rrm
     }
     
 
-    LogData RrmLogParser::parsFile(
+    ColumnLogData RrmLogParser::parsFile(
         const std::string& file_path,
         const std::vector<ColumnSpec>& column_specs,
         std::optional<int> step,
