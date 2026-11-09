@@ -95,41 +95,41 @@ namespace rrm
     // ------------------------------------------------------------
 
     LogData MeasurementDataMapper::toLegacyData(
-        const ColumnLogData& source
+        const ColumnLogData& col_log_data
     )
     {
-        // Copy information shared by the generic and legacy data structures.
-        LogData legacy_data{};
-        legacy_data.file_path = source.file_path;
-        legacy_data.sel_step = source.sel_step;
-        legacy_data.metadata = source.metadata;
-        legacy_data.summary = source.summary;
-        legacy_data.metadata_notes = source.metadata_notes;
-        legacy_data.summary_notes = source.summary_notes;
-        legacy_data.n_meas_rows = source.n_meas_rows;
-        legacy_data.parse_status = source.parse_status;
-        legacy_data.parse_message = source.parse_message;
-        legacy_data.selected_step_finished = source.selected_step_finished;
+        // Copy data that both structures have in common
+        LogData log_data{};
+        log_data.file_path = col_log_data.file_path;
+        log_data.sel_step = col_log_data.sel_step;
+        log_data.metadata = col_log_data.metadata;
+        log_data.summary = col_log_data.summary;
+        log_data.metadata_notes = col_log_data.metadata_notes;
+        log_data.summary_notes = col_log_data.summary_notes;
+        log_data.n_meas_rows = col_log_data.n_meas_rows;
+        log_data.parse_status = col_log_data.parse_status;
+        log_data.parse_message = col_log_data.parse_message;
+        log_data.selected_step_finished = col_log_data.selected_step_finished;
 
-        // Preserve parser diagnostics when parsing failed before a header was found.
-        if (source.data_table.columns.empty() &&
-            source.parse_status != ParseStatus::Complete)
+        // Retrun diagnostic and measurement data if table columns are empty.
+        if (col_log_data.data_table.columns.empty() &&
+            col_log_data.parse_status != ParseStatus::Complete)
         {
-            return legacy_data;
+            return log_data;
         }
 
         // Find and validate every column required by MeasurementAnalyzer.
         const Column& step_column = requiredColumn(
-            source, "step", ValueType::Int64
+            col_log_data, "step", ValueType::Int64
         );
         const Column& time_column = requiredColumn(
-            source, "time", ValueType::Int64
+            col_log_data, "time", ValueType::Int64
         );
         const Column& force_column = requiredColumn(
-            source, "radial load", ValueType::Double
+            col_log_data, "radial load", ValueType::Double
         );
         const Column& torque_column = requiredColumn(
-            source, "torque", ValueType::Double
+            col_log_data, "torque", ValueType::Double
         );
 
         // All required columns must describe the same number of measurements.
@@ -144,10 +144,10 @@ namespace rrm
         }
 
         // Convert each column-oriented row into one legacy measurement sample.
-        legacy_data.meas_samples.reserve(count);
+        log_data.meas_samples.reserve(count);
         for (std::size_t i = 0; i < count; ++i)
         {
-            legacy_data.meas_samples.push_back({
+            log_data.meas_samples.push_back({
                 requiredValue<std::int64_t>(step_column, i),
                 requiredValue<std::int64_t>(time_column, i),
                 requiredValue<double>(force_column, i),
@@ -155,6 +155,6 @@ namespace rrm
             });
         }
 
-        return legacy_data;
+        return log_data;
     }
 } // namespace rrm

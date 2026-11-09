@@ -7,8 +7,8 @@ namespace rrm
     /**
      * @brief Converts generic column-oriented log data into legacy measurement data.
      *
-     * The mapper provides the boundary between RrmLogParser's generic storage and
-     * the MeasurementSample storage consumed by MeasurementAnalyzer and the GUI.
+     * The mapper maps the Log Parser data structure to the data structure used
+     * by the Measurement analyzer and the QT Applications (main window)
      */
     class MeasurementDataMapper
     {
